@@ -40,7 +40,7 @@ def getLeagueInfo(playerName):
 		print('ERROR making a request to the LEAGUE RIOT API')
 		return None
 
-	return response.json()
+	return response
 
 
 # Returns the mastery info of certain player with certain champion.
@@ -73,7 +73,7 @@ def getMasteryInfo(playerName, championName):
 		print('ERROR making a request to the RIOT MASTERY API')
 		return None
 
-	return response.json()
+	return response
 
 
 # Returns the champion ID (an integer) provided the champion name.
@@ -90,7 +90,7 @@ def _getChampionId(championName):
 
 	# Extract the value we need
 	try:
-		return response.json()['data'][championName]['key']
+		return response['data'][championName]['key']
 	except Exception:
 		print ('ERROR: the response from the RIOT CHAMPIONS API is not formatted as expected')
 		return None
@@ -113,7 +113,7 @@ def _getEncryptedSummonerId(playerName):
 		return None
 
 	try:
-		return response.json()['id']
+		return response['id']
 	except Exception:
 		print('ERROR: the response from the RIOT SUMMONER API is not formatted as expected')
 		return None
