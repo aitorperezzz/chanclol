@@ -1,3 +1,2 @@
 __pycache__/
-apikey.txt
-discordToken.txt
+.env
