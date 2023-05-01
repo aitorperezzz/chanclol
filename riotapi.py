@@ -14,6 +14,7 @@ class RiotApi:
         self.route_league = '/lol/league/v4/entries/by-summoner/'
         self.route_mastery = '/lol/champion-mastery/v4/champion-masteries/by-summoner/'
         self.route_mastery_by_champ = '/by-champion/'
+        self.route_active_games = '/lol/spectator/v4/active-games/by-summoner/'
         # Dragon route to fetch info about the champions
         self.route_champions = 'http://ddragon.leagueoflegends.com/cdn/10.20.1/data/en_US/champion.json'
 
@@ -40,7 +41,7 @@ class RiotApi:
 
         # Make the request to the server
         response = self._get(url, header)
-        if response == None:
+        if response['response'] == None:
             print('ERROR making a request to the Riot league API')
             return None
 
@@ -73,11 +74,45 @@ class RiotApi:
 
         # Make the request and check everything is OK
         response = self._get(url, header)
-        if response == None:
+        if response['response'] == None:
             print('ERROR making a request to the Riot mastery API')
             return None
 
         return response
+
+    # Returns information about ongoing games
+    def get_active_game_info(self, player_name):
+        return_value = {'in_game': False, 'error': True, 'data': None}
+
+        # Get encrypted summoner ID
+        encrypted_summoner_id = self.get_encrypted_summoner_id(player_name)
+        if encrypted_summoner_id == None:
+            print('ERROR: could not get encrypted summoner ID')
+            return return_value
+
+        # Build the request
+        url = self.riot_schema + self.route_active_games + encrypted_summoner_id
+        header = self.build_api_header()
+        if header == None:
+            print('ERROR: could not build the header for the request')
+            return return_value
+
+        # Make the request and check everything is OK
+        response = self._get(url, header)
+        if response['status_code'] == None:
+            print('Connection error')
+        elif response['status_code'] == 404:
+            print('User is not in game')
+            return_value['error'] = False
+        elif response['status_code'] != 200:
+            print('Problem making a request to the Riot active game API')
+        else:
+            return_value['in_game'] = True
+            return_value['error'] = False
+            return_value['data'] = response['response']
+
+        print(return_value)
+        return return_value
 
     # Returns the champion ID (an integer) provided the champion name.
     # Returns None if error
@@ -88,7 +123,7 @@ class RiotApi:
 
         # Make the request and check everything is OK
         response = self._get(url, {})
-        if response == None:
+        if response['response'] == None:
             print('ERROR: could not make request to Riot champions API')
             return None
 
@@ -113,15 +148,16 @@ class RiotApi:
 
         # Make the request to the server and check the response
         response = self._get(url, header=header)
-        if response == None:
+        if response['response'] == None:
             print('ERROR: could not make request to the Riot summoner API')
             return None
 
         try:
-            return response['id']
+            return response['response']['id']
         except Exception:
             print(
-                'ERROR: the response from the RIOT SUMMONER API is not formatted as expected')
+                'ERROR: the response from the RIOT summoner API is not formatted as expected')
+            print(response)
             return None
 
     # Returns a header that includes the API key.
@@ -135,16 +171,22 @@ class RiotApi:
 
     # Makes a simple request using the requests module.
     def _get(self, url, header):
+        return_value = {'status_code': None, 'response': None}
+
+        # Make the request and check the connection was good
         response = requests.get(url, headers=header)
         if response == None:
             print('ERROR establishing connection')
-            return None
+            return return_value
 
+        # Decide depending on the status code
+        return_value['status_code'] = response.status_code
         if response.status_code != 200:
-            print('ERROR making the request to the Riot API, status code is not 200')
-            return None
-
-        return response.json()
+            print('Error processing request to Riot API')
+            print(response)
+        else:
+            return_value['response'] = response.json()
+        return return_value
 
     # Returns the API key as found in the environment
     def get_api_key(self):

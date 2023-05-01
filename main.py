@@ -1,4 +1,5 @@
 import os
+import asyncio
 import discord
 import bot
 from dotenv import load_dotenv
@@ -10,11 +11,13 @@ if token == None:
     raise EnvironmentError(
         'DISCORD_TOKEN not found in the environment')
 
-# Create a client and a bot
+# Create a discord client with the correct intents
 intents = discord.Intents.default()
 intents.message_content = True
 client = discord.Client(intents=intents)
-bot = bot.Bot()
+
+# Create the bot
+chanclol_bot = bot.Bot()
 
 
 @client.event
@@ -28,7 +31,17 @@ async def on_ready():
 @client.event
 async def on_message(message):
     print(f' -> Forwarding message from {message.author}: {message.content}')
-    await bot.receive(message, client)
+    await chanclol_bot.receive(message, client)
 
 
-client.run(token)
+# Function that creates all the tasks in the server
+async def spawn_main_tasks():
+    # The bot checks the in-game status of all the users registered in an infinite loop
+    bot_task = asyncio.create_task(chanclol_bot.loop_check_games())
+    # The client listens to messages sent on discord and forwards them to the bot
+    client_task = asyncio.create_task(client.start(token))
+    # Wait for all tasks to complete (in reality they never will)
+    await asyncio.gather(bot_task, client_task)
+
+# Call main function and block here
+asyncio.run(spawn_main_tasks())
