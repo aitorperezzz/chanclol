@@ -16,6 +16,10 @@ intents = discord.Intents.default()
 intents.message_content = True
 client = discord.Client(intents=intents)
 
+# Set up logging of the discord library.
+# If not running with client.run(), the library will not produce any output
+discord.utils.setup_logging()
+
 # Create the bot
 chanclol_bot = bot.Bot()
 
