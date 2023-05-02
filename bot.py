@@ -1,23 +1,89 @@
 import riotapi
 import asyncio
+import parsing
+
+# The bot contains as many Guild classes as servers have invited
+# the bot and interacted with it
 
 
 class Guild:
-    def __init__(self, channel):
+    def __init__(self, id, channel):
+        # Unique identifier of the guild as handled by discord
+        self.id = id
+        # Copy of the channel object to send messages to
         self.channel = channel
+        # List of usernames registered in this server
         self.usernames = []
+        # Bot prefix being used in this server
+        self.prefix = 'chanclol'
 
-    def add_username(self, username):
+    # Register a new username in the internal list
+    async def register(self, riotapi, username):
+
+        # Check if the username is already in the list
+        if username in self.usernames:
+            response = f'Username {username} is already registered'
+            print(response)
+            await self.channel.send(response)
+            return
+
+        # Check the username in fact exists
+        league_info = riotapi.get_league_info(username)
+        if league_info == None:
+            response = f'Could not get response from Riot API for user {username}'
+            print(response)
+            await self.channel.send(response)
+            return
+
+        # Now it's safe to add to the list
         self.usernames.append(username)
 
+        # Send a final message
+        response = f'User {username} registered correctly'
+        print(response)
+        response += '\n'
+        for league in league_info['response']:
+            response += f'Queue {league["queueType"]}: rank {league["tier"]} {league["rank"]} {league["leaguePoints"]} LPs\n'
+        await self.channel.send(response)
 
+    # Unregister a username from the internal list
+    async def unregister(self, username):
+        # Check if the username is already in the list
+        if username in self.usernames:
+            self.usernames.remove(username)
+            response = f'Username {username} unregistered correctly'
+        else:
+            response = f'Username {username} is not registered'
+        print(response)
+        await self.channel.send(response)
+
+    # Print the usernames currently registered
+    async def print(self):
+        if len(self.usernames) == 0:
+            response = 'No usernames registered'
+        else:
+            response = 'Usernames currently registered:\n'
+            for username in self.usernames:
+                response += f'{username}\n'
+        print(response)
+        await self.channel.send(response)
+
+    # Changes the prefix in this server
+    async def change_prefix(self, new_prefix):
+        self.prefix = new_prefix
+        response = f'Prefix has been changed to {self.prefix}'
+        print(response)
+        await self.channel.send(response)
+
+
+# The bot: receives commands from the discord client
+# and processes them. It runs an infinite loop that checks the
+# in-game status of all the usernames registered for each guild
 class Bot:
     def __init__(self):
-        # The prefix used by the bot
-        self.prefix = 'chanclol'
         # All the guild-related information managed by the bot
         self.guilds = {}
-        # Create a Riot API class
+        # Riot API class
         self.riot_api = riotapi.RiotApi()
 
     # Main entry point for all messages
@@ -27,89 +93,33 @@ class Bot:
             print('Rejecting message sent by myself')
             return
 
-        # Check the message is intended for the bot
-        if not message.content.startswith(self.prefix):
-            print('Rejecting message not intended for the bot')
-            return
+        # Register a guild in case it does not yet exist
+        if not message.guild.id in self.guilds:
+            print(f'initialising guild {message.guild.id}')
+            self.guilds[message.guild.id] = Guild(
+                message.guild.id, message.channel)
+        guild = self.guilds[message.guild.id]
 
-        # Decide on the command and call the appropriate function
-        words = message.content[len(self.prefix):].strip(' \n\t').split()
-        if len(words) == 0:
-            print(f'No words to process in message {message}')
-            await message.channel.send('Please provide a command')
-            return
-        command = words[0]
-        words = words[1:]
-        if command == 'register':
-            # chanclol register <username>
-            if len(words) != 1:
-                print(f'"register" command called with words: "{words}"')
-                await message.channel.send('"register" command accepts only one word: a Riot username')
-                return
-            await self.register(message.channel, message.guild, words[0])
-        elif command == 'print':
-            # chanclol print
-            await self.print(message.channel, message.guild)
-        elif command == 'unregister':
-            # chanclol unregister <username>
-            if len(words) != 1:
-                print(f'"unregister" command called with words: "{words}"')
-                await message.channel.send('"unregister" command accepts only one word: a Riot username')
-                return
-            await self.unregister(message.channel, message.guild, words[0])
-        else:
-            response = f'Command "{command}" is not understood'
+        # Parse the input provided and call the appropriate function
+        parsed_input = parsing.Parser(message.content, guild.prefix)
+        if parsed_input.code == parsing.ParseResult.NOT_BOT_PREFIX:
+            print('Rejecting message not intended for the bot')
+        elif parsed_input.code != parsing.ParseResult.OK:
+            response = f'Input is not valid: {parsed_input.get_error_string()}'
             print(response)
             await message.channel.send(response)
-
-        print('Message has been processed')
-
-    async def register(self, channel, guild, username):
-
-        # Add guild if not yet in the dictionary
-        if not guild.id in self.guilds:
-            self.guilds[guild.id] = Guild(channel)
-
-        # Check if the username is already in the list
-        if username in self.guilds[guild.id].usernames:
-            response = f'Username {username} is already registered'
-            print(response)
-            await channel.send(response)
-            return
-
-        # Check the username in fact exists
-        league_info = self.riot_api.get_league_info(username)
-        if league_info == None:
-            response = f'Could not get response from Riot API for user {username}'
-            print(response)
-            await channel.send(response)
-            return
-
-        # Now it's safe to add to the list
-        self.guilds[guild.id].add_username(username)
-
-        # Send a final message
-        response = f'User {username} registered correctly'
-        print(response)
-        response += '\n'
-        for league in league_info['response']:
-            response += f'Queue {league["queueType"]}: rank {league["tier"]} {league["rank"]} {league["leaguePoints"]} LPs\n'
-        await channel.send(response)
-
-    async def print(self, channel, guild):
-        if not guild.id in self.guilds or guild.id in self.guilds and len(self.guilds[guild.id].usernames) == 0:
-            response = 'No usernames registered'
-            print(response)
-            await channel.send(response)
         else:
-            response = 'Usernames currently registered:\n'
-            for username in self.guilds[guild.id].usernames:
-                response += f'{username}\n'
-            print(response)
-            await channel.send(response)
-
-    def unregister(self, message, words):
-        raise NotImplemented()
+            print('Command understood')
+            if parsed_input.command == parsing.Command.REGISTER:
+                await guild.register(self.riot_api, ' '.join(parsed_input.arguments))
+            elif parsed_input.command == parsing.Command.UNREGISTER:
+                await guild.unregister(' '.join(parsed_input.arguments))
+            elif parsed_input.command == parsing.Command.PRINT:
+                await guild.print()
+            elif parsed_input.command == parsing.Command.PREFIX:
+                guild.change_prefix(parsed_input.arguments[0])
+            else:
+                raise ValueError('Command is not one of the possible ones')
 
     async def loop_check_games(self):
         while True:
