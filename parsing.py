@@ -90,5 +90,6 @@ class Parser():
                 self.code = ParseResult.PREFIX_TOO_MANY_WORDS
             else:
                 self.code = ParseResult.OK
+                self.arguments = words
         else:
             self.code = ParseResult.COMMAND_NOT_UNDERSTOOD

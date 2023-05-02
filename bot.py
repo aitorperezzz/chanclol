@@ -117,7 +117,7 @@ class Bot:
             elif parsed_input.command == parsing.Command.PRINT:
                 await guild.print()
             elif parsed_input.command == parsing.Command.PREFIX:
-                guild.change_prefix(parsed_input.arguments[0])
+                await guild.change_prefix(parsed_input.arguments[0])
             else:
                 raise ValueError('Command is not one of the possible ones')
 
