@@ -45,12 +45,16 @@ class InGameInfo:
     # Information about an on going game
 
     def __init__(self, response, riot_api):
+        # If no response, it means the player is not playing
         self.in_game = True if response else False
-        # It does not make sense to continue when the player is not in game
         if not response:
             return
         self.game_id = response['gameId']
         self.game_length = response['gameLength']
+        # If no Riot API, it means the game was already informed in the past, so
+        # no need to continue to fill in data
+        if not riot_api:
+            return
         # Assign team ids, there should be only two possible values
         team_ids = list(set([participant['teamId']
                         for participant in response['participants']]))
@@ -102,8 +106,10 @@ class RiotApi:
         # Dragon route to fetch info about spells
         self.route_spells = 'http://ddragon.leagueoflegends.com/cdn/13.9.1/data/en_US/summoner.json'
         self.data_spells = None
-        # Internal copy of encrypted summoner ids
+        # Internal copy of encrypted summoner ids to prevent too many requests
         self.encrypted_summoner_ids = {}
+        # Last informed game id for each of the players for which a game has been informed
+        self.informed_game_ids = {}
 
     # Returns all the League info for the provided player name.
     # The league info is a list of objects, one for each of the queues for which
@@ -185,13 +191,27 @@ class RiotApi:
             return None
         elif response['status_code'] == 404:
             print('User is not in game')
-            return InGameInfo(None, self)
+            return InGameInfo(None, None)
         elif response['status_code'] != 200:
             print('Problem making a request to the Riot active game API')
             return None
         else:
             print('User is in game')
-            return InGameInfo(response['response'], self)
+            game_id = response['response']['gameId']
+            if not player_name in self.informed_game_ids:
+                # The player is currently playing and was never informed on any game,
+                # so a complete response needs to be built,
+                # and the game id added as the last one informed
+                self.informed_game_ids[player_name] = game_id
+                return InGameInfo(response['response'], self)
+            elif self.informed_game_ids[player_name] == game_id:
+                # The player is playing, but this game was already informed
+                return InGameInfo(response['response'], None)
+            else:
+                # The player was informed previously for another game, so the internal list
+                # needs to get updated with the new game id, and a complete response built
+                self.informed_game_ids[player_name] = game_id
+                return InGameInfo(response['response'], self)
 
     # Creates the internal data for champions
     def request_champion_data(self):
@@ -296,6 +316,7 @@ class RiotApi:
     # Makes a simple request using the requests module.
     def _get(self, url, header):
         return_value = {'status_code': None, 'response': None}
+        print(f' *** Making a request to url {url}')
 
         # Make the request and check the connection was good
         response = requests.get(url, headers=header)
