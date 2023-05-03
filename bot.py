@@ -1,70 +1,80 @@
 import riotapi
 import asyncio
 import parsing
+import math
 
-# The bot contains as many Guild classes as servers have invited
-# the bot and interacted with it
+
+class Player:
+    # A player registered inside a guild
+
+    def __init__(self, name):
+        # Name of the player (Riot account username)
+        self.name = name
+        # The id of the last game that was informed for this user
+        self.last_informed_game_id = None
 
 
 class Guild:
+    # Any guild where this bot has been invited
+
     def __init__(self, id, channel):
         # Unique identifier of the guild as handled by discord
         self.id = id
         # Copy of the channel object to send messages to
         self.channel = channel
-        # List of usernames registered in this server
-        self.usernames = []
+        # List of players registered in this guild
+        self.players = {}
         # Bot prefix being used in this server
         self.prefix = 'chanclol'
 
-    # Register a new username in the internal list
-    async def register(self, riotapi, username):
+    # Register a new player in the internal list
+    async def register(self, riot_api, player_name):
 
-        # Check if the username is already in the list
-        if username in self.usernames:
-            response = f'Username {username} is already registered'
+        # Check if the player is already in the list
+        if player_name in self.players:
+            response = f'Player {player_name} is already registered'
             print(response)
             await self.channel.send(response)
             return
 
-        # Check the username in fact exists
-        league_info = riotapi.get_league_info(username)
+        # Check the player in fact exists
+        league_info = riot_api.get_league_info(player_name)
         if league_info == None:
-            response = f'Could not get response from Riot API for user {username}'
+            response = f'Could not get league info from Riot API for player {player_name}'
             print(response)
             await self.channel.send(response)
             return
 
         # Now it's safe to add to the list
-        self.usernames.append(username)
+        self.players[player_name] = Player(player_name)
 
         # Send a final message
-        response = f'User {username} registered correctly'
+        response = f'Player {player_name} registered correctly'
         print(response)
         response += '\n'
-        for league in league_info['response']:
-            response += f'Queue {league["queueType"]}: rank {league["tier"]} {league["rank"]} {league["leaguePoints"]} LPs\n'
+        for league in league_info:
+            response += f'Queue {league.queue_type}: rank {league.tier} {league.rank} {league.lps} LPs\n'
         await self.channel.send(response)
 
-    # Unregister a username from the internal list
-    async def unregister(self, username):
-        # Check if the username is already in the list
-        if username in self.usernames:
-            self.usernames.remove(username)
-            response = f'Username {username} unregistered correctly'
+    # Unregister a player from the internal list
+    async def unregister(self, player_name):
+        # Check if the player is already in the list
+        if player_name in self.players:
+            del self.players[player_name]
+            response = f'Player {player_name} unregistered correctly'
         else:
-            response = f'Username {username} is not registered'
+            response = f'Player {player_name} is not registered'
         print(response)
         await self.channel.send(response)
 
-    # Print the usernames currently registered
+    # Print the players currently registered
     async def print(self):
-        if len(self.usernames) == 0:
-            response = 'No usernames registered'
+        if len(self.players) == 0:
+            response = 'No players registered'
         else:
-            response = 'Usernames currently registered:\n'
-            for username in self.usernames:
-                response += f'{username}\n'
+            response = 'Players currently registered:\n'
+            for player_name in self.players:
+                response += f'{player_name}\n'
         print(response)
         await self.channel.send(response)
 
@@ -76,10 +86,11 @@ class Guild:
         await self.channel.send(response)
 
 
-# The bot: receives commands from the discord client
-# and processes them. It runs an infinite loop that checks the
-# in-game status of all the usernames registered for each guild
 class Bot:
+    # The bot: receives commands from the discord client
+    # and processes them. It runs an infinite loop that checks the
+    # in-game status of all the usernames registered for each guild
+
     def __init__(self):
         # All the guild-related information managed by the bot
         self.guilds = {}
@@ -124,19 +135,43 @@ class Bot:
     async def loop_check_games(self):
         while True:
             for guildid in self.guilds:
-                for username in self.guilds[guildid].usernames:
-                    # Make a request to Riot and check if the user is in game
+                for player in self.guilds[guildid].players.values():
+                    # Make a request to Riot and check if the player is in game
                     active_game_info = self.riot_api.get_active_game_info(
-                        username)
-                    if active_game_info['error']:
+                        player.name)
+                    if active_game_info == None:
                         print(
-                            f'Error retrieving in-game data for username {username}')
-                    elif not active_game_info['in_game']:
-                        print(f'User {username} is currently not playing')
+                            f'Error retrieving in-game data for player {player.name}')
+                    elif not active_game_info.in_game:
+                        print(f'Player {player.name} is currently not in game')
                     else:
-                        response = f'User {username} is playing'
+                        response = f'Player {player.name} is in game'
                         print(response)
-                        asyncio.create_task(
-                            self.guilds[guildid].channel.send(response))
+                        if player.last_informed_game_id != active_game_info.game_id:
+                            response += '\n' + \
+                                self.create_in_game_message(active_game_info)
+                            asyncio.create_task(
+                                self.guilds[guildid].channel.send(response))
+                            player.last_informed_game_id = active_game_info.game_id
+                        else:
+                            print(
+                                f'In game message for player {player.name} has already been sent')
 
             await asyncio.sleep(10)
+
+    def create_in_game_message(self, active_game_info):
+        message = f'Time elapsed: {math.floor(active_game_info.game_length / 60)} minutes\n'
+        team_counter = 1
+        for team in [active_game_info.team_1, active_game_info.team_2]:
+            message += self.create_in_game_team_message(team, team_counter)
+            team_counter += 1
+        return message
+
+    def create_in_game_team_message(self, team, number):
+        message = f'Team {number}:\n'
+        for participant in team:
+            message += f' * Champion: {participant.champion_name}, Player: {participant.player_name}, '
+            message += f'Mastery: {participant.mastery.level}\n'
+            message += f'   Days without playing this champion: {participant.mastery.days_since_last_played}\n'
+            message += f'   Spell 1: {participant.spell1_name}, Spell 2: {participant.spell2_name}\n'
+        return message

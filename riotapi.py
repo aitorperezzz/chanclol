@@ -1,6 +1,87 @@
 import requests
 import os
+import time
+import math
 from dotenv import load_dotenv
+
+
+class LeagueInfo:
+    # Information returned, for a specific player and for a specific
+    # queue, containing its current ranked position in that queue
+
+    def __init__(self, response):
+        if not response:
+            return None
+        self.queue_type = response['queueType']
+        self.tier = response['tier']
+        self.rank = response['rank']
+        self.lps = response['leaguePoints']
+
+
+class Participant:
+    # Information about a participant in a live game
+
+    def __init__(self, participant, riotapi):
+        if not participant:
+            return None
+        self.player_name = participant['summonerName']
+        # To get the champion name, I need to make a request
+        champion_id = participant['championId']
+        self.champion_name = riotapi.get_champion_name(champion_id)
+        if self.champion_name == None:
+            return None
+        self.spell1_name = riotapi.get_spell_name(participant['spell1Id'])
+        if self.spell1_name == None:
+            return None
+        self.spell2_name = riotapi.get_spell_name(participant['spell2Id'])
+        if self.spell2_name == None:
+            return None
+        self.mastery = riotapi.get_mastery_info(self.player_name, champion_id)
+        if self.mastery == None:
+            return None
+
+
+class InGameInfo:
+    # Information about an on going game
+
+    def __init__(self, response, riot_api):
+        self.in_game = True if response else False
+        # It does not make sense to continue when the player is not in game
+        if not response:
+            return
+        self.game_id = response['gameId']
+        self.game_length = response['gameLength']
+        # Assign team ids, there should be only two possible values
+        team_ids = list(set([participant['teamId']
+                        for participant in response['participants']]))
+        if len(team_ids) != 2:
+            print('Riot has not provided exactly two team ids')
+            return None
+        # Fill in both of the teams
+        self.team_1 = []
+        self.team_2 = []
+        for participant in response['participants']:
+            if participant['teamId'] == team_ids[0]:
+                self.team_1.append(Participant(participant, riot_api))
+            elif participant['teamId'] == team_ids[1]:
+                self.team_2.append(Participant(participant, riot_api))
+            else:
+                print('Participant does not belong to any team')
+                return None
+
+
+class MasteryInfo:
+    # Information about how good is a player with a certain champion
+
+    def __init__(self, response):
+        if not response:
+            return None
+        # Mastery level
+        self.level = response['championLevel']
+        # lastPlayTime is in Unix milliseconds
+        time_in_seconds = time.time()
+        self.days_since_last_played = math.floor((time_in_seconds -
+                                                  response['lastPlayTime'] / 1000) / 3600 / 24)
 
 
 class RiotApi:
@@ -16,12 +97,17 @@ class RiotApi:
         self.route_mastery_by_champ = '/by-champion/'
         self.route_active_games = '/lol/spectator/v4/active-games/by-summoner/'
         # Dragon route to fetch info about the champions
-        self.route_champions = 'http://ddragon.leagueoflegends.com/cdn/10.20.1/data/en_US/champion.json'
+        self.route_champions = 'http://ddragon.leagueoflegends.com/cdn/13.9.1/data/en_US/champion.json'
+        self.data_champions = None
+        # Dragon route to fetch info about spells
+        self.route_spells = 'http://ddragon.leagueoflegends.com/cdn/13.9.1/data/en_US/summoner.json'
+        self.data_spells = None
+        # Internal copy of encrypted summoner ids
+        self.encrypted_summoner_ids = {}
 
     # Returns all the League info for the provided player name.
-    # The league info is a list of dicts, one for each of the queues for which
+    # The league info is a list of objects, one for each of the queues for which
     # the user has been placed. If the list is empty, the user is not placed.
-    # Returns None if error.
     def get_league_info(self, player_name):
 
         # Get the encrypted summoner id with the username
@@ -45,23 +131,19 @@ class RiotApi:
             print('ERROR making a request to the Riot league API')
             return None
 
-        print(response)
-        return response
+        # Prepare the final result
+        result = []
+        for league in response['response']:
+            result.append(LeagueInfo(league))
+        return result
 
     # Returns the mastery info of certain player with certain champion.
-    # Returns None if error.
-    def get_mastery_info(self, player_name, champion_name):
+    def get_mastery_info(self, player_name, champion_id):
 
         # Get encrypted summoner ID
         encrypted_summoner_id = self.get_encrypted_summoner_id(player_name)
         if encrypted_summoner_id == None:
             print('ERROR: could not get encrypted summoner ID')
-            return None
-
-        # Get champion ID
-        champion_id = self.get_champion_id(champion_name)
-        if champion_id == None:
-            print('ERROR: could not get champion ID')
             return None
 
         # Build the request
@@ -78,46 +160,41 @@ class RiotApi:
             print('ERROR making a request to the Riot mastery API')
             return None
 
-        return response
+        return MasteryInfo(response['response'])
 
     # Returns information about ongoing games
     def get_active_game_info(self, player_name):
-        return_value = {'in_game': False, 'error': True, 'data': None}
 
         # Get encrypted summoner ID
         encrypted_summoner_id = self.get_encrypted_summoner_id(player_name)
         if encrypted_summoner_id == None:
             print('ERROR: could not get encrypted summoner ID')
-            return return_value
+            return None
 
         # Build the request
         url = self.riot_schema + self.route_active_games + encrypted_summoner_id
         header = self.build_api_header()
         if header == None:
             print('ERROR: could not build the header for the request')
-            return return_value
+            return None
 
         # Make the request and check everything is OK
         response = self._get(url, header)
         if response['status_code'] == None:
             print('Connection error')
+            return None
         elif response['status_code'] == 404:
             print('User is not in game')
-            return_value['error'] = False
+            return InGameInfo(None, self)
         elif response['status_code'] != 200:
             print('Problem making a request to the Riot active game API')
+            return None
         else:
-            return_value['in_game'] = True
-            return_value['error'] = False
-            return_value['data'] = response['response']
+            print('User is in game')
+            return InGameInfo(response['response'], self)
 
-        print(return_value)
-        return return_value
-
-    # Returns the champion ID (an integer) provided the champion name.
-    # Returns None if error
-    def get_champion_id(self, champion_name):
-
+    # Creates the internal data for champions
+    def request_champion_data(self):
         # Build the request
         url = self.route_champions
 
@@ -127,17 +204,67 @@ class RiotApi:
             print('ERROR: could not make request to Riot champions API')
             return None
 
-        # Extract the value we need
-        try:
-            return response['data'][champion_name]['key']
-        except Exception:
-            print(
-                'ERROR: the response from the Riot champions API is not formatted as expected')
+        # keep a copy of the data
+        self.data_champions = response['response']['data']
+
+    # Creates the internal data for spells
+    def request_spell_data(self):
+        # Build the request
+        url = self.route_spells
+
+        # Make the request and check everything is OK
+        response = self._get(url, {})
+        if response['response'] == None:
+            print('ERROR: could not make request to Riot spells API')
             return None
 
-    # Returns the encrypted summoner id (a string) provided the player name.
-    # Returns None if error.
+        # keep a copy of the data
+        self.data_spells = response['response']['data']
+
+    # Returns the champion ID provided the champion name.
+    def get_champion_id(self, champion_name):
+
+        if not self.data_champions:
+            self.request_champion_data()
+
+        # Extract the value we need
+        return self.data_champions[champion_name]['key']
+
+    # Returns the champion name corresponding to a champion id
+    def get_champion_name(self, champion_id):
+
+        if not self.data_champions:
+            self.request_champion_data()
+
+        # Loop over all the champions and look for the one we want
+        for champion in self.data_champions.values():
+            if int(champion['key']) == champion_id:
+                return champion['id']
+        # At this point the champion has not been found
+        print(f'Could not find name of champion id {champion_id}')
+        return None
+
+    # Returns the name of a spell given its id
+    def get_spell_name(self, spell_id):
+
+        if not self.data_spells:
+            self.request_spell_data()
+
+        # Loop over all the spells and look for the one we want
+        for spell in self.data_spells.values():
+            if int(spell['key']) == spell_id:
+                return spell['name']
+        # At this point the spell has not been found
+        print(f'Could not find name of spell id {spell_id}')
+        return None
+
+    # Returns the encrypted summoner id provided the player name.
     def get_encrypted_summoner_id(self, player_name):
+
+        # First check if we already have a copy of this value, to avoid
+        # executing too many requests
+        if player_name in self.encrypted_summoner_ids:
+            return self.encrypted_summoner_ids[player_name]
 
         # Build the request
         url = self.riot_schema + self.route_summoner + player_name
@@ -152,13 +279,10 @@ class RiotApi:
             print('ERROR: could not make request to the Riot summoner API')
             return None
 
-        try:
-            return response['response']['id']
-        except Exception:
-            print(
-                'ERROR: the response from the RIOT summoner API is not formatted as expected')
-            print(response)
-            return None
+        # Keep a copy of the encrypted summoner id for later
+        encrypted_summoner_id = response['response']['id']
+        self.encrypted_summoner_ids[player_name] = encrypted_summoner_id
+        return encrypted_summoner_id
 
     # Returns a header that includes the API key.
     # Returns None of the header could not be built.
