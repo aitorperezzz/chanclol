@@ -14,7 +14,9 @@ if token == None:
 # Create a discord client with the correct intents
 intents = discord.Intents.default()
 intents.message_content = True
-client = discord.Client(intents=intents)
+activity = discord.Activity(
+    type=discord.ActivityType.listening, name="chanclol help")
+client = discord.Client(intents=intents, activity=activity)
 
 # Set up logging of the discord library.
 # If not running with client.run(), the library will not produce any output
