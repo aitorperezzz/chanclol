@@ -3,6 +3,7 @@ import os
 import time
 import asyncio
 from dotenv import load_dotenv
+import rate_limiter
 
 
 class LeagueInfo:
@@ -59,38 +60,21 @@ class MasteryInfo:
 class Response:
     # Low level response returned by the Riot API
     def __init__(self, response):
-        if response == None:
-            return None
-        # A copy of the status code will always be kept
-        self.status_code = response.status_code
+        # I always expect to return an instance of the class
+        self.status_code = 429
         self.data = None
+        if not response:
+            return
+        # Update status code in case it is available
+        self.status_code = response.status_code
         if self.status_code == 200:
-            # This is the only case where there is a response
             self.data = response.json()
         elif self.status_code == 429:
-            print('Rate limit exceeded')
+            print('Riot is rate limiting requests')
         elif self.status_code == 404:
             print('Data not found')
         else:
             print(f'Error connecting to Riot API: {response.json()}')
-
-
-class RateLimiter:
-    # Class that will tell the caller if a certain call can be done or not. It keeps
-    # an internal count of the time and only returns OK when sufficient time has elapsed
-
-    def __init__(self, seconds_between_requests):
-        self.seconds_between_requests = seconds_between_requests
-        self.time = time.time()
-
-    # Returns true if a request can be made at this moment. Additionally, after accepting
-    # a request it will udpate its internal timer of the last request
-    def can_perform_request(self):
-        current_time = time.time()
-        make_request = current_time - self.time > self.seconds_between_requests
-        if make_request:
-            self.time = time.time()
-        return make_request
 
 
 class RiotApi:
@@ -113,8 +97,13 @@ class RiotApi:
         self.data_spells = None
         # Internal copy of encrypted summoner ids to prevent too many requests
         self.encrypted_summoner_ids = {}
-        # Create a rate limiter, which will answer if a request can be done or not
-        self.rate_limiter = RateLimiter(2)
+        # Create a rate limiter that will give permissions to make requests to riot API
+        # 100 requests in 2 minutes
+        restriction1 = rate_limiter.Restriction(100, 2 * 60 * 1000)
+        # 20 requests per second
+        restriction2 = rate_limiter.Restriction(20, 1 * 1000)
+        self.rate_limiter = rate_limiter.RateLimiter(
+            [restriction1, restriction2])
 
     # Returns all the League info for the provided player name.
     # The league info is a list of objects, one for each of the queues for which
@@ -138,7 +127,7 @@ class RiotApi:
 
         # Make the request to the server
         response = await self._get(url, header)
-        if response == None or response.status_code != 200:
+        if response.status_code != 200:
             print('ERROR making a request to the Riot league API')
             return None
 
@@ -167,11 +156,14 @@ class RiotApi:
 
         # Make the request and check everything is OK
         response = await self._get(url, header)
-        if response == None:
-            print('ERROR making a request to the Riot mastery API')
+        if response.status_code == 404:
+            print('Mastery was not found for this player and champion combination')
+            return MasteryInfo(None)
+        elif response.status_code != 200:
+            print(f'Error retrieving mastery for player {player_name}')
             return None
-
-        return MasteryInfo(response.data if response.status_code == 200 else None)
+        else:
+            return MasteryInfo(response.data)
 
     # Returns information about ongoing games
     async def get_active_game_info(self, player_name, last_informed_game_id, cache=False):
@@ -191,12 +183,12 @@ class RiotApi:
 
         # Make the request and check everything is OK
         response = await self._get(url, header)
-        if response == None:
-            print('Error making a request to active game Riot API')
-            return None
-        elif response.status_code == 404:
+        if response.status_code == 404:
             print(f'Player {player_name} is not in game')
-            return await self.create_in_game_info(None, None)
+            return await self.create_in_game_info(None, None, False)
+        elif response.status_code == 429:
+            print('Rate limited')
+            return None
         elif response.status_code != 200:
             print('Problem making a request to the Riot active game API')
             return None
@@ -207,21 +199,20 @@ class RiotApi:
                 # The player has already been informed of this game, so no need to
                 # continue with the requests
                 print(f'Player {player_name} was already informed')
-                return await self.create_in_game_info(response.data, True)
+                return await self.create_in_game_info(response.data, True, True)
             else:
                 # The player has not yet been informed of this game, so make the complete
                 # set of requests
                 print(f'Player {player_name} was never informed')
-                return await self.create_in_game_info(response.data, False)
+                return await self.create_in_game_info(response.data, False, True)
 
     # Creates the in game info with the current data returned by the in game API,
     # and a flag indicating if this game was already informed in the past, in which case,
     # some requests will not be made
-    async def create_in_game_info(self, response, previously_informed):
+    async def create_in_game_info(self, response, previously_informed, in_game):
         in_game_info = InGameInfo()
 
-        # If no response, it means the player is not playing
-        in_game_info.in_game = True if response else False
+        in_game_info.in_game = in_game
         if not response:
             return in_game_info
         in_game_info.game_id = response['gameId']
@@ -277,7 +268,7 @@ class RiotApi:
 
         # Make the request and check everything is OK
         response = await self._get(url, {})
-        if response == None:
+        if response.status_code != 200:
             print('ERROR: could not make request to Riot champions API')
             return None
 
@@ -291,7 +282,7 @@ class RiotApi:
 
         # Make the request and check everything is OK
         response = await self._get(url, {})
-        if response == None:
+        if response.status_code != 200:
             print('ERROR: could not make request to Riot spells API')
             return None
 
@@ -352,7 +343,7 @@ class RiotApi:
 
         # Make the request to the server and check the response
         response = await self._get(url, header=header)
-        if response == None:
+        if response.status_code != 200:
             print('ERROR: could not make request to the Riot summoner API')
             return None
 
@@ -379,18 +370,15 @@ class RiotApi:
     async def _get(self, url, header):
 
         # Wait until the request can be made
-        while not self.rate_limiter.can_perform_request():
-            print(' *** Waiting to make request...')
-            await asyncio.sleep(self.rate_limiter.seconds_between_requests)
+        vital = not self.route_active_games in url
+        allowed = await self.rate_limiter.allowed(vital)
+        if not allowed:
+            print(' *** Rate limiter is not allowing the request')
+            return Response(None)
         print(f' *** Making a request to url {url}')
 
         # Make the request and check the connection was good
-        response = requests.get(url, headers=header)
-        if response == None:
-            print(' *** ERROR establishing connection')
-            return None
-
-        return Response(response)
+        return Response(requests.get(url, headers=header))
 
     # Returns the API key as found in the environment
     def get_api_key(self):

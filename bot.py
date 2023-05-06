@@ -161,7 +161,7 @@ class Bot:
                         player_name, last_informed_game_id, cache=True)
                     if active_game_info == None:
                         print(
-                            f'Error retrieving in-game data for player {player_name}')
+                            f'In-game data for player {player_name} is not available')
                     elif not active_game_info.in_game:
                         print(f'Player {player_name} is currently not in game')
                     elif last_informed_game_id == active_game_info.game_id:
