@@ -43,9 +43,9 @@ class InGameInfo:
 class MasteryInfo:
     # Information about how good is a player with a certain champion
 
-    def __init__(self, response, available):
+    def __init__(self, response):
         # Flag indicating if mastery info is available for the player and champion combination
-        self.available = available
+        self.available = response == None
         if not self.available:
             return
         # Mastery level
@@ -170,7 +170,7 @@ class RiotApi:
             print('ERROR making a request to the Riot mastery API')
             return None
 
-        return MasteryInfo(response.data, response.status_code == 200)
+        return MasteryInfo(response.data if response.status_code == 200 else None)
 
     # Returns information about ongoing games
     async def get_active_game_info(self, player_name, last_informed_game_id, cache=False):

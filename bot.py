@@ -23,8 +23,6 @@ class Guild:
         self.channel = channel
         # List of players registered in this guild
         self.players = {}
-        # Bot prefix being used in this server
-        self.prefix = 'chanclol'
 
     # Register a new player in the internal list
     async def register(self, riot_api, player_name):
@@ -77,13 +75,6 @@ class Guild:
         print(response)
         await self.channel.send(response)
 
-    # Changes the prefix in this server
-    async def change_prefix(self, new_prefix):
-        self.prefix = new_prefix
-        response = f'Prefix has been changed to {self.prefix}'
-        print(response)
-        await self.channel.send(response)
-
 
 class Bot:
     # The bot: receives commands from the discord client
@@ -111,7 +102,7 @@ class Bot:
         guild = self.guilds[message.guild.id]
 
         # Parse the input provided and call the appropriate function
-        parsed_input = parsing.Parser(message.content, guild.prefix)
+        parsed_input = parsing.Parser(message.content)
         if parsed_input.code == parsing.ParseResult.NOT_BOT_PREFIX:
             print('Rejecting message not intended for the bot')
         elif parsed_input.code != parsing.ParseResult.OK:
@@ -126,8 +117,6 @@ class Bot:
                 await guild.unregister(' '.join(parsed_input.arguments))
             elif parsed_input.command == parsing.Command.PRINT:
                 await guild.print()
-            elif parsed_input.command == parsing.Command.PREFIX:
-                await guild.change_prefix(parsed_input.arguments[0])
             else:
                 raise ValueError('Command is not one of the possible ones')
 
@@ -182,8 +171,9 @@ class Bot:
             message += f' * Champion: {participant.champion_name}, Player: {participant.player_name}, '
             if participant.mastery.available:
                 message += f'Mastery: {participant.mastery.level}\n'
+                message += f'   Days without playing this champion: {participant.mastery.days_since_last_played}\n'
             else:
                 message += f'Mastery: not available\n'
-            message += f'   Days without playing this champion: {participant.mastery.days_since_last_played}\n'
+                message += f'   Days without playing this champion: not available\n'
             message += f'   Spell 1: {participant.spell1_name}, Spell 2: {participant.spell2_name}\n'
         return message

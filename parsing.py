@@ -7,7 +7,6 @@ class Command(Enum):
     REGISTER = 0
     UNREGISTER = 1
     PRINT = 2
-    PREFIX = 3
 
 
 # Possible results after parsing user input
@@ -18,16 +17,15 @@ class ParseResult(Enum):
     COMMAND_NOT_UNDERSTOOD = 3
     REGISTER_NO_INPUT = 4
     UNREGISTER_NO_INPUT = 5
-    PREFIX_NO_INPUT = 6
-    PREFIX_TOO_MANY_WORDS = 7
 
 
 class Parser():
-    def __init__(self, message, current_prefix):
+    def __init__(self, message):
         self.code = None
         self.command = None
         self.arguments = None
-        self.parse(message, current_prefix)
+        self.prefix = 'chanclol'
+        self.parse(message)
 
     def get_error_string(self):
         if self.code == ParseResult.NO_COMMAND:
@@ -38,22 +36,18 @@ class Parser():
             return '<register> command requires an argument'
         elif self.code == ParseResult.UNREGISTER_NO_INPUT:
             return '<unregister> command requires an argument'
-        elif self.code == ParseResult.PREFIX_NO_INPUT:
-            return '<prefix> command requires an argument'
-        elif self.code == ParseResult.PREFIX_TOO_MANY_WORDS:
-            return '<prefix> command accepts only one word'
         else:
             raise ValueError(
                 'ParsedInput.get_error_string() called with bad code')
 
-    def parse(self, message, current_prefix):
-        if not message.startswith(current_prefix):
+    def parse(self, message):
+        if not message.startswith(self.prefix):
             print('Rejecting message not intended for the bot')
             self.code = ParseResult.NOT_BOT_PREFIX
             return
 
         # Get the command if it exists
-        words = message[len(current_prefix):].strip(' \n\t').split()
+        words = message[len(self.prefix):].strip(' \n\t').split()
         if len(words) == 0:
             self.code = ParseResult.NO_COMMAND
             return
@@ -81,15 +75,5 @@ class Parser():
             # chanclol print
             self.command = Command.PRINT
             self.code = ParseResult.OK
-        elif command == 'prefix':
-            # chanclol prefix <new_prefix>
-            self.command = Command.PREFIX
-            if len(words) == 0:
-                self.code = ParseResult.PREFIX_NO_INPUT
-            elif len(words) > 1:
-                self.code = ParseResult.PREFIX_TOO_MANY_WORDS
-            else:
-                self.code = ParseResult.OK
-                self.arguments = words
         else:
             self.code = ParseResult.COMMAND_NOT_UNDERSTOOD
