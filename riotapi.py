@@ -63,6 +63,7 @@ class Response:
             return None
         # A copy of the status code will always be kept
         self.status_code = response.status_code
+        self.data = None
         if self.status_code == 200:
             # This is the only case where there is a response
             self.data = response.json()
@@ -357,6 +358,9 @@ class RiotApi:
 
         # Keep a copy of the encrypted summoner id for later, in case the data
         # is requested to be cached
+        if not response.data:
+            print(f'Player {player_name} not found')
+            return None
         encrypted_summoner_id = response.data['id']
         if cache:
             self.encrypted_summoner_ids[player_name] = encrypted_summoner_id
