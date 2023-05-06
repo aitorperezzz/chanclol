@@ -38,7 +38,7 @@ class Guild:
             return
 
         # Check the player in fact exists
-        league_info = riot_api.get_league_info(player_name)
+        league_info = await riot_api.get_league_info(player_name)
         if league_info == None:
             response = f'Could not get league info from Riot API for player {player_name}'
             print(response)
@@ -134,44 +134,53 @@ class Bot:
 
     async def loop_check_games(self):
         while True:
-            for guildid in self.guilds:
-                for player in self.guilds[guildid].players.values():
+            for guildid in list(self.guilds.keys()):
+                # If a guild has disappeared while in the process of creating a message, simply continue
+                if not guildid in self.guilds:
+                    continue
+                for player_name in list(self.guilds[guildid].players.keys()):
+                    # If a player has been unregistered in the process of creating a message, simply continue
+                    if not player_name in self.guilds[guildid].players:
+                        print('Player has been removed from the list')
+                        continue
                     # Make a request to Riot and check if the player is in game
-                    active_game_info = self.riot_api.get_active_game_info(
-                        player.name)
+                    active_game_info = await self.riot_api.get_active_game_info(
+                        player_name)
                     if active_game_info == None:
                         print(
-                            f'Error retrieving in-game data for player {player.name}')
+                            f'Error retrieving in-game data for player {player_name}')
                     elif not active_game_info.in_game:
-                        print(f'Player {player.name} is currently not in game')
+                        print(f'Player {player_name} is currently not in game')
+                    elif active_game_info.previously_informed:
+                        print(
+                            f'Message for player {player_name} for this game has already been sent')
                     else:
-                        response = f'Player {player.name} is in game'
+                        response = f'Player {player_name} is in game'
                         print(response)
-                        if player.last_informed_game_id != active_game_info.game_id:
-                            response += '\n' + \
-                                self.create_in_game_message(active_game_info)
-                            asyncio.create_task(
-                                self.guilds[guildid].channel.send(response))
-                            player.last_informed_game_id = active_game_info.game_id
-                        else:
-                            print(
-                                f'In game message for player {player.name} has already been sent')
+                        response += '\n' + \
+                            self.create_in_game_message(active_game_info)
+                        await self.guilds[guildid].channel.send(response)
 
             await asyncio.sleep(10)
 
+    # Build the message that is displayed the first time a player is caught in game
     def create_in_game_message(self, active_game_info):
-        message = f'Time elapsed: {math.floor(active_game_info.game_length / 60)} minutes\n'
+        message = f'Time elapsed: {math.round(active_game_info.game_length / 60)} minutes\n'
         team_counter = 1
         for team in [active_game_info.team_1, active_game_info.team_2]:
             message += self.create_in_game_team_message(team, team_counter)
             team_counter += 1
         return message
 
+    # Create the in-game message for a specific team
     def create_in_game_team_message(self, team, number):
         message = f'Team {number}:\n'
         for participant in team:
             message += f' * Champion: {participant.champion_name}, Player: {participant.player_name}, '
-            message += f'Mastery: {participant.mastery.level}\n'
+            if participant.mastery.available:
+                message += f'Mastery: {participant.mastery.level}\n'
+            else:
+                message += f'Mastery: not available\n'
             message += f'   Days without playing this champion: {participant.mastery.days_since_last_played}\n'
             message += f'   Spell 1: {participant.spell1_name}, Spell 2: {participant.spell2_name}\n'
         return message
