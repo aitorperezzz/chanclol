@@ -1,7 +1,6 @@
 import riotapi
 import asyncio
 import parsing
-import math
 
 
 class Player:
@@ -38,7 +37,7 @@ class Guild:
             return
 
         # Check the player in fact exists
-        league_info = await riot_api.get_league_info(player_name)
+        league_info = await riot_api.get_league_info(player_name, True)
         if league_info == None:
             response = f'Could not get league info from Riot API for player {player_name}'
             print(response)
@@ -143,20 +142,24 @@ class Bot:
                     if not player_name in self.guilds[guildid].players:
                         print('Player has been removed from the list')
                         continue
-                    # Make a request to Riot and check if the player is in game
+                    # Make a request to Riot to check if the player is in game
+                    # We need to forward the game id of the last game that was informed for this user in this guild
+                    last_informed_game_id = self.guilds[guildid].players[player_name].last_informed_game_id
                     active_game_info = await self.riot_api.get_active_game_info(
-                        player_name)
+                        player_name, last_informed_game_id, cache=True)
                     if active_game_info == None:
                         print(
                             f'Error retrieving in-game data for player {player_name}')
                     elif not active_game_info.in_game:
                         print(f'Player {player_name} is currently not in game')
-                    elif active_game_info.previously_informed:
+                    elif last_informed_game_id == active_game_info.game_id:
                         print(
-                            f'Message for player {player_name} for this game has already been sent')
+                            f'Message for player {player_name} for this game was already sent')
                     else:
                         response = f'Player {player_name} is in game'
                         print(response)
+                        # Update the last informed game_id
+                        self.guilds[guildid].players[player_name].last_informed_game_id = active_game_info.game_id
                         response += '\n' + \
                             self.create_in_game_message(active_game_info)
                         await self.guilds[guildid].channel.send(response)

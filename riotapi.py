@@ -1,7 +1,6 @@
 import requests
 import os
 import time
-import math
 import asyncio
 from dotenv import load_dotenv
 
@@ -35,7 +34,6 @@ class InGameInfo:
 
     def __init__(self):
         self.in_game = None
-        self.previously_informed = None
         self.game_id = None
         self.game_length_minutes = None
         self.team_1 = []
@@ -54,8 +52,8 @@ class MasteryInfo:
         self.level = response['championLevel']
         # lastPlayTime is in Unix milliseconds
         time_in_seconds = time.time()
-        self.days_since_last_played = math.round((time_in_seconds -
-                                                  response['lastPlayTime'] / 1000) / 3600 / 24)
+        self.days_since_last_played = round((time_in_seconds -
+                                             response['lastPlayTime'] / 1000) / 3600 / 24)
 
 
 class Response:
@@ -114,18 +112,16 @@ class RiotApi:
         self.data_spells = None
         # Internal copy of encrypted summoner ids to prevent too many requests
         self.encrypted_summoner_ids = {}
-        # Last informed game id for each of the players for which a game has been informed
-        self.informed_game_ids = {}
         # Create a rate limiter, which will answer if a request can be done or not
         self.rate_limiter = RateLimiter(2)
 
     # Returns all the League info for the provided player name.
     # The league info is a list of objects, one for each of the queues for which
     # the player has been placed. If the list is empty, the player is not placed.
-    async def get_league_info(self, player_name):
+    async def get_league_info(self, player_name, cache=False):
 
         # Get the encrypted summoner id with the player name
-        encrypted_summoner_id = await self.get_encrypted_summoner_id(player_name)
+        encrypted_summoner_id = await self.get_encrypted_summoner_id(player_name, cache)
         if encrypted_summoner_id == None:
             print('ERROR: could not get encrypted summoner ID')
             return None
@@ -177,10 +173,10 @@ class RiotApi:
         return MasteryInfo(response.data, response.status_code == 200)
 
     # Returns information about ongoing games
-    async def get_active_game_info(self, player_name):
+    async def get_active_game_info(self, player_name, last_informed_game_id, cache=False):
 
         # Get encrypted summoner ID
-        encrypted_summoner_id = await self.get_encrypted_summoner_id(player_name)
+        encrypted_summoner_id = await self.get_encrypted_summoner_id(player_name, cache)
         if encrypted_summoner_id == None:
             print('ERROR: could not get encrypted summoner ID')
             return None
@@ -206,22 +202,15 @@ class RiotApi:
         else:
             print(f'Player {player_name} is in game')
             game_id = response.data['gameId']
-            if not player_name in self.informed_game_ids:
-                # The player is currently playing and was never informed on any game,
-                # so a complete response needs to be built,
-                # and the game id added as the last one informed
-                print('Player is in game and has never been informed')
-                self.informed_game_ids[player_name] = game_id
-                return await self.create_in_game_info(response.data, False)
-            elif self.informed_game_ids[player_name] == game_id:
-                # The player is playing, but this game was already informed
-                print('Player was already informed')
+            if last_informed_game_id == game_id:
+                # The player has already been informed of this game, so no need to
+                # continue with the requests
+                print(f'Player {player_name} was already informed')
                 return await self.create_in_game_info(response.data, True)
             else:
-                # The player was informed previously for another game, so the internal list
-                # needs to get updated with the new game id, and a complete response built
-                print('Player is in game and was never informed')
-                self.informed_game_ids[player_name] = game_id
+                # The player has not yet been informed of this game, so make the complete
+                # set of requests
+                print(f'Player {player_name} was never informed')
                 return await self.create_in_game_info(response.data, False)
 
     # Creates the in game info with the current data returned by the in game API,
@@ -235,10 +224,9 @@ class RiotApi:
         if not response:
             return in_game_info
         in_game_info.game_id = response['gameId']
-        in_game_info.game_length_minutes = math.round(
+        in_game_info.game_length_minutes = round(
             response['gameLength'] / 60)
         # If the game was already informed in the past, no need to continue
-        in_game_info.previously_informed = previously_informed
         if previously_informed:
             return in_game_info
         # Assign team ids, there should be only two possible values
@@ -347,7 +335,7 @@ class RiotApi:
         return None
 
     # Returns the encrypted summoner id provided the player name.
-    async def get_encrypted_summoner_id(self, player_name):
+    async def get_encrypted_summoner_id(self, player_name, cache=False):
 
         # First check if we already have a copy of this value, to avoid
         # executing too many requests
@@ -367,9 +355,11 @@ class RiotApi:
             print('ERROR: could not make request to the Riot summoner API')
             return None
 
-        # Keep a copy of the encrypted summoner id for later
+        # Keep a copy of the encrypted summoner id for later, in case the data
+        # is requested to be cached
         encrypted_summoner_id = response.data['id']
-        self.encrypted_summoner_ids[player_name] = encrypted_summoner_id
+        if cache:
+            self.encrypted_summoner_ids[player_name] = encrypted_summoner_id
         return encrypted_summoner_id
 
     # Returns a header that includes the API key.
