@@ -37,7 +37,7 @@ class InGameInfo:
         self.in_game = None
         self.previously_informed = None
         self.game_id = None
-        self.game_length = None
+        self.game_length_minutes = None
         self.team_1 = []
         self.team_2 = []
 
@@ -235,7 +235,8 @@ class RiotApi:
         if not response:
             return in_game_info
         in_game_info.game_id = response['gameId']
-        in_game_info.game_length = response['gameLength']
+        in_game_info.game_length_minutes = math.round(
+            response['gameLength'] / 60)
         # If the game was already informed in the past, no need to continue
         in_game_info.previously_informed = previously_informed
         if previously_informed:

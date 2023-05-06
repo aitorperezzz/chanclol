@@ -165,7 +165,7 @@ class Bot:
 
     # Build the message that is displayed the first time a player is caught in game
     def create_in_game_message(self, active_game_info):
-        message = f'Time elapsed: {math.round(active_game_info.game_length / 60)} minutes\n'
+        message = f'Time elapsed: {active_game_info.game_length_minutes} minutes\n'
         team_counter = 1
         for team in [active_game_info.team_1, active_game_info.team_2]:
             message += self.create_in_game_team_message(team, team_counter)
