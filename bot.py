@@ -2,6 +2,7 @@ import riotapi
 import asyncio
 import parsing
 import discord
+import message_formatter
 
 
 class Player:
@@ -30,53 +31,41 @@ class Guild:
 
         # Check if the player is already in the list
         if player_name in self.players:
-            response = f'Player {player_name} is already registered'
-            print(response)
-            return response
+            print(f'Player {player_name} is already registered')
+            return message_formatter.player_already_registered(player_name)
 
         # Check the player in fact exists
         league_info = await riot_api.get_league_info(player_name, True)
         if league_info == None:
-            response = f'Could not get league info from Riot API for player {player_name}'
-            print(response)
-            return response
+            print(
+                f'Could not get league info from Riot API for player {player_name}')
+            return message_formatter.no_response_league_api(player_name)
 
         # Now it's safe to add to the list
         self.players[player_name] = Player(player_name)
 
         # Send a final message
-        response = f'Player {player_name} registered correctly'
-        print(response)
-        response += '\n'
-        for league in league_info:
-            response += f'Queue {league.queue_type}: rank {league.tier} {league.rank} {league.lps} LPs\n'
-        return response
+        print(f'Player {player_name} registered correctly')
+        return message_formatter.player_registered(player_name, league_info)
 
     # Unregister a player from the internal list
     async def unregister(self, player_name):
         # Check if the player is already in the list
         if player_name in self.players:
             del self.players[player_name]
-            response = f'Player {player_name} unregistered correctly'
+            print(f'Player {player_name} unregistered correctly')
+            return message_formatter.player_unregistered(player_name)
         else:
-            response = f'Player {player_name} is not registered'
-        print(response)
-        return response
+            print(f'Player {player_name} was not registered previously')
+            return message_formatter.player_not_previously_registered(player_name)
 
     # Print the players currently registered
     async def print(self, bot):
-        # Print the players currently registered
-        if len(self.players) == 0:
-            response = 'No players registered\n'
-        else:
-            response = f'Players currently registered: {", ".join(self.players.keys())}\n'
-        print(response)
-        # Print the name of the channel the bot sends messages to
         channel_name = bot.client.get_channel(self.channel_id).name
         if channel_name == None:
-            return None
-        response += f'Sending messages to channel: {channel_name}'
-        return response
+            raise ValueError(
+                'Internal channel id has not been found for this guild')
+        return message_formatter.print(self.players, channel_name)
 
     # Change the channel where the in-game messages will be sent to
     async def channel(self, new_channel_name, bot):
@@ -84,12 +73,12 @@ class Guild:
         # First make sure the channel does exist in the guild
         channel = discord.utils.get(guild.channels, name=new_channel_name)
         if channel == None:
-            response = f'Channel {new_channel_name} does not exist in this server'
+            print(f'Channel {new_channel_name} does not exist')
+            return message_formatter.channel_does_not_exist(new_channel_name)
         else:
-            response = f'From now on, I will send messages to channel {new_channel_name}'
+            print(f'Channel changed to {new_channel_name}')
             self.channel_id = channel.id
-        print(response)
-        return response
+            return message_formatter.channel_changed(new_channel_name)
 
 
 class Bot:
@@ -120,12 +109,11 @@ class Bot:
 
         # Register a guild in case it does not yet exist
         if not message.guild.id in self.guilds:
-            print(f'initialising guild {message.guild.id}')
+            print(f'Initialising guild {message.guild.id}')
             self.guilds[message.guild.id] = Guild(
                 message.guild.id, message.channel.id)
-            response = f'I will be sending messages to channel {message.channel.name}\n'
-            response += 'You can change this anytime by typing "chanclol channel <new_channel_name>"'
-            await message.channel.send(response)
+            response = message_formatter.welcome(message.channel.name)
+            await message.channel.send(content=response.content, embed=response.embed)
         guild = self.guilds[message.guild.id]
 
         # Parse the input provided and call the appropriate function
@@ -133,9 +121,10 @@ class Bot:
         if parsed_input.code == parsing.ParseResult.NOT_BOT_PREFIX:
             print('Rejecting message not intended for the bot')
         elif parsed_input.code != parsing.ParseResult.OK:
-            response = f'Input is not valid: {parsed_input.get_error_string()}'
-            print(response)
-            await message.channel.send(response)
+            syntax_error_string = parsed_input.get_error_string()
+            print(f'Input not valid: {syntax_error_string}')
+            response = message_formatter.input_not_valid(syntax_error_string)
+            await message.channel.send(content=response.content, embed=response.embed)
         else:
             print('Command understood')
             if parsed_input.command == parsing.Command.REGISTER:
@@ -147,11 +136,11 @@ class Bot:
             elif parsed_input.command == parsing.Command.CHANNEL:
                 response = await guild.channel(' '.join(parsed_input.arguments), self)
             elif parsed_input.command == parsing.Command.HELP:
-                response = self.create_help_message()
+                response = message_formatter.create_help_message()
             else:
                 raise ValueError('Command is not one of the possible ones')
             if response:
-                await message.channel.send(response)
+                await message.channel.send(content=response.content, embed=response.embed)
 
     async def loop_check_games(self):
         while True:
@@ -163,7 +152,7 @@ class Bot:
                 for player_name in list(guild.players.keys()):
                     # If a player has been unregistered in the process of creating a message, simply continue
                     if not player_name in guild.players:
-                        print('Player has been removed from the list')
+                        print('Player has been removed from the list while iterating')
                         continue
                     # Make a request to Riot to check if the player is in game
                     # We need to forward the game id of the last game that was informed for this user in this guild
@@ -179,39 +168,16 @@ class Bot:
                         print(
                             f'Message for player {player_name} for this game was already sent')
                     else:
-                        response = f'Player {player_name} is in game'
-                        print(response)
+                        print(
+                            f'Player {player_name} is in game and a message has to be sent')
                         # Update the last informed game_id
                         guild.players[player_name].last_informed_game_id = active_game_info.game_id
                         # Create the complete response
-                        response += '\n' + \
-                            self.create_in_game_message(active_game_info)
-                        await self.send_message(response, guild.channel_id)
+                        message = message_formatter.in_game_message(
+                            active_game_info, player_name)
+                        await self.send_message(message, guild.channel_id)
 
             await asyncio.sleep(10)
-
-    # Build the message that is displayed the first time a player is caught in game
-    def create_in_game_message(self, active_game_info):
-        message = f'Time elapsed: {active_game_info.game_length_minutes} minutes\n'
-        team_counter = 1
-        for team in [active_game_info.team_1, active_game_info.team_2]:
-            message += self.create_in_game_team_message(team, team_counter)
-            team_counter += 1
-        return message
-
-    # Create the in-game message for a specific team
-    def create_in_game_team_message(self, team, number):
-        message = f'Team {number}:\n'
-        for participant in team:
-            message += f' * Champion: {participant.champion_name}, Player: {participant.player_name}, '
-            if participant.mastery.available:
-                message += f'Mastery: {participant.mastery.level}\n'
-                message += f'   Days without playing this champion: {participant.mastery.days_since_last_played}\n'
-            else:
-                message += f'Mastery: not available\n'
-                message += f'   Days without playing this champion: not available\n'
-            message += f'   Spell 1: {participant.spell1_name}, Spell 2: {participant.spell2_name}\n'
-        return message
 
     # Send the provided message for the provided channel id, if it exists
     async def send_message(self, message, channel_id):
@@ -220,14 +186,4 @@ class Bot:
         if channel == None:
             print('Could not find channel to send message to')
         else:
-            await channel.send(message)
-
-    # Print the response to the help command
-    def create_help_message(self):
-        message = 'Commands supported:\n'
-        message += 'chanclol register <player_name>: register a new player\n'
-        message += 'chanclol unregister <player_name>: unregister a player previously added\n'
-        message += 'chanclol print: print the players currently registered, and the channel the bot is sending messages to\n'
-        message += 'chanclol channel <new_channel_name>: change the channel the bot sends messages to\n'
-        message += 'chanclol help: print the usage of the different commands'
-        return message
+            await channel.send(content=message.content, embed=message.embed)

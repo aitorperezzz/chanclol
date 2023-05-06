@@ -32,15 +32,15 @@ class Parser():
 
     def get_error_string(self):
         if self.code == ParseResult.NO_COMMAND:
-            return 'no command provided'
+            return 'No command provided'
         elif self.code == ParseResult.COMMAND_NOT_UNDERSTOOD:
-            return 'command not recognised'
+            return 'Command not recognised'
         elif self.code == ParseResult.REGISTER_NO_INPUT:
-            return '<register> command requires an argument'
+            return 'Command `register` requires an argument'
         elif self.code == ParseResult.UNREGISTER_NO_INPUT:
-            return '<unregister> command requires an argument'
+            return 'Command `unregister` requires an argument'
         elif self.code == ParseResult.CHANNEL_NO_INPUT:
-            return '<channel> command requires an argument'
+            return 'Command `channel` requires an argument'
         else:
             raise ValueError(
                 'ParsedInput.get_error_string() called with bad code')
