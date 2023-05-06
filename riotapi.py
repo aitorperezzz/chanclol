@@ -45,7 +45,7 @@ class MasteryInfo:
 
     def __init__(self, response):
         # Flag indicating if mastery info is available for the player and champion combination
-        self.available = response == None
+        self.available = response != None
         if not self.available:
             return
         # Mastery level
