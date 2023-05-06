@@ -94,6 +94,12 @@ class Bot:
             print('Rejecting message sent by myself')
             return
 
+        # For the time being, ignore messages sent on private channels
+        if not message.guild:
+            print('Ignoring private message')
+            await message.channel.send('For the time being, I am ignoring private messages')
+            return
+
         # Register a guild in case it does not yet exist
         if not message.guild.id in self.guilds:
             print(f'initialising guild {message.guild.id}')
