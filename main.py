@@ -23,7 +23,7 @@ client = discord.Client(intents=intents, activity=activity)
 discord.utils.setup_logging()
 
 # Create the bot
-chanclol_bot = bot.Bot()
+chanclol_bot = bot.Bot(client)
 
 
 @client.event
@@ -37,7 +37,7 @@ async def on_ready():
 @client.event
 async def on_message(message):
     print(f' -> Forwarding message from {message.author}: {message.content}')
-    await chanclol_bot.receive(message, client)
+    await chanclol_bot.receive(message)
 
 
 # Function that creates all the tasks in the server
