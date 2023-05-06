@@ -71,7 +71,7 @@ def channel_does_not_exist(channel_name):
 
 
 def channel_changed(channel_name):
-    return Message(f'From now on, I will be sending im-game messages in **{channel_name}**', None)
+    return Message(f'From now on, I will be sending in-game messages in **{channel_name}**', None)
 
 
 def create_help_message():
