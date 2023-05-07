@@ -3,6 +3,7 @@ import asyncio
 import parsing
 import discord
 import message_formatter
+import database
 
 
 class Player:
@@ -54,7 +55,7 @@ class Guild:
         if player_name in self.players:
             del self.players[player_name]
             print(f'Player {player_name} unregistered correctly')
-            return message_formatter.player_unregistered(player_name)
+            return message_formatter.player_unregistered_correctly(player_name)
         else:
             print(f'Player {player_name} was not registered previously')
             return message_formatter.player_not_previously_registered(player_name)
@@ -93,6 +94,10 @@ class Bot:
         self.riot_api = riotapi.RiotApi()
         # Keep a copy of the client
         self.client = client
+        # Create the database
+        self.database = database.Database()
+        # Initialise the riot API with possible contents inside the database
+        self.riot_api.set_database(self.database)
 
     # Main entry point for all messages
     async def receive(self, message):

@@ -61,9 +61,9 @@ class Response:
     # Low level response returned by the Riot API
     def __init__(self, response):
         # I always expect to return an instance of the class
-        self.status_code = 429
+        self.status_code = None
         self.data = None
-        if not response:
+        if response == None:
             return
         # Update status code in case it is available
         self.status_code = response.status_code
@@ -73,6 +73,8 @@ class Response:
             print('Riot is rate limiting requests')
         elif self.status_code == 404:
             print('Data not found')
+        elif self.status_code == 403:
+            print('Forbidden. Probably API key is not valid')
         else:
             print(f'Error connecting to Riot API: {response.json()}')
 
@@ -104,6 +106,8 @@ class RiotApi:
         restriction2 = rate_limiter.Restriction(20, 1 * 1000)
         self.rate_limiter = rate_limiter.RateLimiter(
             [restriction1, restriction2])
+        # Riot API will have a database (it will be set by the bot)
+        self.database = None
 
     # Returns all the League info for the provided player name.
     # The league info is a list of objects, one for each of the queues for which
@@ -272,8 +276,10 @@ class RiotApi:
             print('ERROR: could not make request to Riot champions API')
             return None
 
-        # keep a copy of the data
-        self.data_champions = response.data['data']
+        # Keep a copy of the data
+        for champion in response.data['data'].values():
+            self.data_champions[int(champion['key'])] = champion['id']
+        self.database.set_champions(self.data_champions)
 
     # Creates the internal data for spells
     async def request_spell_data(self):
@@ -287,16 +293,9 @@ class RiotApi:
             return None
 
         # keep a copy of the data
-        self.data_spells = response.data['data']
-
-    # Returns the champion ID provided the champion name.
-    async def get_champion_id(self, champion_name):
-
-        if not self.data_champions:
-            await self.request_champion_data()
-
-        # Extract the value we need
-        return self.data_champions[champion_name]['key']
+        for spell in response.data['data'].values():
+            self.data_spells[int(spell['key'])] = spell['name']
+        self.database.set_spells(self.data_spells)
 
     # Returns the champion name corresponding to a champion id
     async def get_champion_name(self, champion_id):
@@ -304,13 +303,10 @@ class RiotApi:
         if not self.data_champions:
             await self.request_champion_data()
 
-        # Loop over all the champions and look for the one we want
-        for champion in self.data_champions.values():
-            if int(champion['key']) == champion_id:
-                return champion['id']
-        # At this point the champion has not been found
-        print(f'Could not find name of champion id {champion_id}')
-        return None
+        if not champion_id in self.data_champions:
+            print(f'Could not find name of champion id {champion_id}')
+            return None
+        return self.data_champions[champion_id]
 
     # Returns the name of a spell given its id
     async def get_spell_name(self, spell_id):
@@ -318,13 +314,17 @@ class RiotApi:
         if not self.data_spells:
             await self.request_spell_data()
 
-        # Loop over all the spells and look for the one we want
-        for spell in self.data_spells.values():
-            if int(spell['key']) == spell_id:
-                return spell['name']
-        # At this point the spell has not been found
-        print(f'Could not find name of spell id {spell_id}')
-        return None
+        if not spell_id in self.data_spells:
+            print(f'Could not find name of spell id {spell_id}')
+            return None
+        return self.data_spells[spell_id]
+
+    # The bot sends the database once initialised. Take the time here to
+    # see if the database already has useful information for us
+    def set_database(self, database):
+        self.database = database
+        self.data_champions = self.database.get_champions()
+        self.data_spells = self.database.get_spells()
 
     # Returns the encrypted summoner id provided the player name.
     async def get_encrypted_summoner_id(self, player_name, cache=False):

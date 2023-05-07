@@ -25,7 +25,7 @@ def player_already_registered(player_name):
 
 
 def no_response_league_api(player_name):
-    return Message(f'Player **{player_name}** does not exist', None)
+    return Message(f'Got no response from Riot API for player **{player_name}**', None)
 
 
 def player_registered(player_name, league_info):
