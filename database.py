@@ -40,9 +40,9 @@ class Database:
             self.execute_query(query)
             print('Creating table: encrypted_summoner_ids')
             query = """CREATE TABLE encrypted_summoner_ids (
-                'player_name' VARCHAR(256) NOT NULL DEFAULT '',
+                'name' VARCHAR(256) NOT NULL DEFAULT '',
                 'encrypted_summoner_id' VARCHAR(256) NOT NULL DEFAULT '',
-                PRIMARY KEY ('player_name'));"""
+                PRIMARY KEY ('name'));"""
             self.execute_query(query)
         else:
             print('Database already present')
@@ -197,3 +197,21 @@ class Database:
         # Change last informed game id
         self.execute_query(
             'UPDATE players SET last_informed_game_id=? WHERE name=? AND guild_id=?;', (last_informed_game_id, player_name, guild_id))
+
+    # Get all the encrypted summoner ids stored in the database
+    def get_encrypted_summoner_ids(self):
+        result = self.execute_query('SELECT * FROM encrypted_summoner_ids;')
+        # Convert to a dictionary
+        encrypted_summoner_ids = {}
+        for element in result:
+            encrypted_summoner_ids[element[0]] = element[1]
+        if len(encrypted_summoner_ids) == 0:
+            print(
+                'The database does not contain encrypted summoner ids currently')
+        return encrypted_summoner_ids
+
+    # Add a new encrypted summoner id to the database
+    def add_encrypted_summoner_id(self, player_name, encrypted_summoner_id):
+        self.execute_query(
+            'INSERT INTO encrypted_summoner_ids (name, encrypted_summoner_id) VALUES (?, ?);',
+            (player_name, encrypted_summoner_id))

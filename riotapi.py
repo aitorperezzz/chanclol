@@ -325,6 +325,7 @@ class RiotApi:
         self.database = database
         self.data_champions = self.database.get_champions()
         self.data_spells = self.database.get_spells()
+        self.encrypted_summoner_ids = self.database.get_encrypted_summoner_ids()
 
     # Returns the encrypted summoner id provided the player name.
     async def get_encrypted_summoner_id(self, player_name, cache=False):
@@ -355,6 +356,8 @@ class RiotApi:
         encrypted_summoner_id = response.data['id']
         if cache:
             self.encrypted_summoner_ids[player_name] = encrypted_summoner_id
+            self.database.add_encrypted_summoner_id(
+                player_name, encrypted_summoner_id)
         return encrypted_summoner_id
 
     # Returns a header that includes the API key.
