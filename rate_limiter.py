@@ -1,6 +1,9 @@
 import math
 import time
 import asyncio
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def get_time_milliseconds():
@@ -50,13 +53,13 @@ class RateLimiter:
             allowed = self.allowed_by_restrictions()
             if allowed:
                 self.history.append(get_time_milliseconds())
-                print('Allowing the request')
+                logger.debug('Allowing the request')
                 return True
             elif not vital:
-                print('Rejecting a non vital request')
+                logger.warning('Rejecting a non vital request')
                 return False
             else:
-                print('Delaying a vital request')
+                logger.warning('Delaying a vital request')
                 await asyncio.sleep(1)
 
     # Trims the history of requests by deleting all the timestamps older than

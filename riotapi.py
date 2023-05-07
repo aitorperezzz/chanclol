@@ -1,9 +1,11 @@
 import requests
 import os
 import time
-import asyncio
 from dotenv import load_dotenv
 import rate_limiter
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class LeagueInfo:
@@ -70,13 +72,15 @@ class Response:
         if self.status_code == 200:
             self.data = response.json()
         elif self.status_code == 429:
-            print('Riot is rate limiting requests')
+            logger.warning('Received 429: Riot is rate limiting requests')
         elif self.status_code == 404:
-            print('Data not found')
+            logger.debug('Received 404: data not found')
         elif self.status_code == 403:
-            print('Forbidden. Probably API key is not valid')
+            logger.error(
+                'Received 403: forbidden. Probably API key is not valid')
         else:
-            print(f'Error connecting to Riot API: {response.json()}')
+            logger.error(
+                f'Unknown error connecting to Riot API: {response.json()}')
 
 
 class RiotApi:
@@ -117,22 +121,23 @@ class RiotApi:
         # Get the encrypted summoner id with the player name
         encrypted_summoner_id = await self.get_encrypted_summoner_id(player_name, cache)
         if encrypted_summoner_id == None:
-            print('ERROR: could not get encrypted summoner ID')
+            logger.info(
+                f'Could not get encrypted summoner id for player {player_name}')
             return None
-        print('Encrypted summoner ID for {}: {}'.format(
+        logger.debug('Encrypted summoner id for player {}: {}'.format(
             player_name, encrypted_summoner_id))
 
         # Build the request
         url = self.riot_schema + self.route_league + encrypted_summoner_id
         header = self.build_api_header()
         if header == None:
-            print('ERROR: could not build the header for the request')
+            logger.error('Could not build the header for the request')
             return None
 
         # Make the request to the server
         response = await self._get(url, header)
         if response.status_code != 200:
-            print('ERROR making a request to the Riot league API')
+            logger.error('Could not make a request to the Riot league API')
             return None
 
         # Prepare the final result
@@ -144,10 +149,11 @@ class RiotApi:
     # Returns the mastery info of certain player with certain champion.
     async def get_mastery_info(self, player_name, champion_id):
 
-        # Get encrypted summoner ID
+        # Get encrypted summoner id
         encrypted_summoner_id = await self.get_encrypted_summoner_id(player_name)
         if encrypted_summoner_id == None:
-            print('ERROR: could not get encrypted summoner ID')
+            logger.error(
+                f'Could not get encrypted summoner id for player {player_name}')
             return None
 
         # Build the request
@@ -155,16 +161,17 @@ class RiotApi:
         url += self.route_mastery_by_champ + str(champion_id)
         header = self.build_api_header()
         if header == None:
-            print('ERROR: could not build the header for the request')
+            logger.error('Could not build the header for the request')
             return None
 
         # Make the request and check everything is OK
         response = await self._get(url, header)
         if response.status_code == 404:
-            print('Mastery was not found for this player and champion combination')
+            logger.info(
+                f'Mastery was not found for this player {player_name} and champion {champion_id} combination')
             return MasteryInfo(None)
         elif response.status_code != 200:
-            print(f'Error retrieving mastery for player {player_name}')
+            logger.error(f'Error retrieving mastery for player {player_name}')
             return None
         else:
             return MasteryInfo(response.data)
@@ -172,42 +179,46 @@ class RiotApi:
     # Returns information about ongoing games
     async def get_active_game_info(self, player_name, last_informed_game_id, cache=False):
 
-        # Get encrypted summoner ID
+        # Get encrypted summoner id
         encrypted_summoner_id = await self.get_encrypted_summoner_id(player_name, cache)
         if encrypted_summoner_id == None:
-            print('ERROR: could not get encrypted summoner ID')
+            logger.error(
+                f'Could not get encrypted summoner id for player {player_name}')
             return None
 
         # Build the request
         url = self.riot_schema + self.route_active_games + encrypted_summoner_id
         header = self.build_api_header()
         if header == None:
-            print('ERROR: could not build the header for the request')
+            logger.error('Could not build the header for the request')
             return None
 
         # Make the request and check everything is OK
         response = await self._get(url, header)
         if response.status_code == 404:
-            print(f'Player {player_name} is not in game')
+            logger.debug(f'Player {player_name} is not in game')
             return await self.create_in_game_info(None, None, False)
         elif response.status_code == 429:
-            print('Rate limited')
+            logger.warning('Rate limited')
             return None
         elif response.status_code != 200:
-            print('Problem making a request to the Riot active game API')
+            logger.error(
+                'Could not make a request to the Riot active game API')
             return None
         else:
-            print(f'Player {player_name} is in game')
+            logger.debug(f'Player {player_name} is in game')
             game_id = response.data['gameId']
             if last_informed_game_id == game_id:
                 # The player has already been informed of this game, so no need to
                 # continue with the requests
-                print(f'Player {player_name} was already informed')
+                logger.debug(
+                    f'Player {player_name} is in game and was already informed')
                 return await self.create_in_game_info(response.data, True, True)
             else:
                 # The player has not yet been informed of this game, so make the complete
                 # set of requests
-                print(f'Player {player_name} was never informed')
+                logger.info(
+                    f'Player {player_name} is in game was never informed')
                 return await self.create_in_game_info(response.data, False, True)
 
     # Creates the in game info with the current data returned by the in game API,
@@ -229,7 +240,7 @@ class RiotApi:
         team_ids = list(set([participant['teamId']
                         for participant in response['participants']]))
         if len(team_ids) != 2:
-            print('Riot has not provided exactly two team ids')
+            logger.error('Riot has not provided exactly two team ids')
             return None
         # Fill in both of the teams
         for participant in response['participants']:
@@ -238,7 +249,7 @@ class RiotApi:
             elif participant['teamId'] == team_ids[1]:
                 in_game_info.team_2.append(await self.create_participant(participant))
             else:
-                print('Participant does not belong to any team')
+                logger.error('Participant does not belong to any team')
                 return None
         return in_game_info
 
@@ -273,7 +284,7 @@ class RiotApi:
         # Make the request and check everything is OK
         response = await self._get(url, {})
         if response.status_code != 200:
-            print('ERROR: could not make request to Riot champions API')
+            logger.error('Could not make request to Riot champions API')
             return None
 
         # Keep a copy of the data
@@ -289,7 +300,7 @@ class RiotApi:
         # Make the request and check everything is OK
         response = await self._get(url, {})
         if response.status_code != 200:
-            print('ERROR: could not make request to Riot spells API')
+            logger.error('Could not make request to Riot spells API')
             return None
 
         # keep a copy of the data
@@ -304,7 +315,7 @@ class RiotApi:
             await self.request_champion_data()
 
         if not champion_id in self.data_champions:
-            print(f'Could not find name of champion id {champion_id}')
+            logger.error(f'Could not find name of champion id {champion_id}')
             return None
         return self.data_champions[champion_id]
 
@@ -315,7 +326,7 @@ class RiotApi:
             await self.request_spell_data()
 
         if not spell_id in self.data_spells:
-            print(f'Could not find name of spell id {spell_id}')
+            logger.error(f'Could not find name of spell id {spell_id}')
             return None
         return self.data_spells[spell_id]
 
@@ -339,19 +350,19 @@ class RiotApi:
         url = self.riot_schema + self.route_summoner + player_name
         header = self.build_api_header()
         if header == None:
-            print('ERROR: could not build the request header')
+            logger.error('Could not build the request header')
             return None
 
         # Make the request to the server and check the response
         response = await self._get(url, header=header)
         if response.status_code != 200:
-            print('ERROR: could not make request to the Riot summoner API')
+            logger.error('Could not make request to the Riot summoner API')
             return None
 
         # Keep a copy of the encrypted summoner id for later, in case the data
         # is requested to be cached
         if not response.data:
-            print(f'Player {player_name} not found')
+            logger.info(f'Player {player_name} not found')
             return None
         encrypted_summoner_id = response.data['id']
         if cache:
@@ -365,7 +376,7 @@ class RiotApi:
     def build_api_header(self):
         api_key = self.get_api_key()
         if api_key == None:
-            print('Could not get the Riot API key')
+            logger.error('Could not get the Riot API key')
             return None
         return {'X-Riot-Token': api_key}
 
@@ -376,9 +387,9 @@ class RiotApi:
         vital = not self.route_active_games in url
         allowed = await self.rate_limiter.allowed(vital)
         if not allowed:
-            print(' *** Rate limiter is not allowing the request')
+            logger.warning('Rate limiter is not allowing the request')
             return Response(None)
-        print(f' *** Making a request to url {url}')
+        logger.debug(f'Making a request to url {url}')
 
         # Make the request and check the connection was good
         return Response(requests.get(url, headers=header))
@@ -391,5 +402,6 @@ class RiotApi:
         else:
             self.api_key = os.getenv('RIOT_API_KEY')
             if self.api_key == None:
-                print('RIOT_API_KEY has not been found in the environment')
+                logger.error(
+                    'RIOT_API_KEY has not been found in the environment')
             return self.api_key

@@ -1,6 +1,9 @@
 import sqlite3
 import os
 import bot
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class Database:
@@ -11,41 +14,42 @@ class Database:
 
     # Initializes the database
     def initialize(self):
+        logger.info('Initialising database')
         if not self.initialized():
-            print('Creating tables in database')
-            print('Creating table: guilds')
+            logger.info('Creating tables in database')
+            logger.info('Creating table guilds')
             query = """CREATE TABLE guilds (
                 'id' INT unsigned DEFAULT NULL,
                 'channel_id' INT unsigned DEFAULT NULL,
                 PRIMARY KEY ('id'));"""
             self.execute_query(query)
-            print('Creating table: players')
+            logger.info('Creating table players')
             query = """CREATE TABLE players (
                 'name' VARCHAR(256) NOT NULL DEFAULT '',
                 'guild_id' INT unsigned DEFAULT NULL,
                 'last_informed_game_id' INT unsigned DEFAULT NULL,
                 PRIMARY KEY ('name', 'guild_id'));"""
             self.execute_query(query)
-            print('Creating table: champions')
+            logger.info('Creating table champions')
             query = """CREATE TABLE champions (
                 'id' INT unsigned DEFAULT NULL,
                 'name' VARCHAR(256) NOT NULL DEFAULT '',
                 PRIMARY KEY ('id'));"""
             self.execute_query(query)
-            print('Creating table: spells')
+            logger.info('Creating table spells')
             query = """CREATE TABLE spells (
                 'id' INT unsigned DEFAULT NULL,
                 'name' VARCHAR(256) NOT NULL DEFAULT '',
                 PRIMARY KEY ('id'));"""
             self.execute_query(query)
-            print('Creating table: encrypted_summoner_ids')
+            logger.info('Creating table encrypted_summoner_ids')
             query = """CREATE TABLE encrypted_summoner_ids (
                 'name' VARCHAR(256) NOT NULL DEFAULT '',
                 'encrypted_summoner_id' VARCHAR(256) NOT NULL DEFAULT '',
                 PRIMARY KEY ('name'));"""
             self.execute_query(query)
         else:
-            print('Database already present')
+            logger.info('Database already present')
         return True
 
     # Decides if the database is already initialized (if the file is present)
@@ -54,6 +58,7 @@ class Database:
 
     # Executes a query into the database
     def execute_query(self, query, tuple=()):
+        logger.debug(f'Executing query {query}')
         try:
             connection = sqlite3.connect(self.filename)
             cursor = connection.cursor()
@@ -62,8 +67,8 @@ class Database:
             connection.commit()
             connection.close()
         except sqlite3.Error as error:
-            print('DATABASE ERROR: could not execute query')
-            print(str(error))
+            logger.error(f'Could not execute query to the database: {query}')
+            logger.error(str(error))
             return None
         return result
 
@@ -74,6 +79,7 @@ class Database:
     # Once the Riot API has downloaded the champions data, it will call this function
     # to store them
     def set_champions(self, champions):
+        logger.info('Setting champions into the database')
         self.execute_query('DELETE FROM champions;')
         for id in champions:
             self.execute_query(
@@ -81,18 +87,20 @@ class Database:
 
     # During initialisation, the Riot API will check if the database already has champions data
     def get_champions(self):
+        logger.info('Getting champions from the database')
         query = 'SELECT * FROM champions;'
         result = self.execute_query(query)
         champions = {}
         for element in result:
             champions[element[0]] = element[1]
         if len(champions) == 0:
-            print('The database does not contain champions currently')
+            logger.info('Table champions is currently empty')
         return champions
 
     # Once the Riot API has downloaded the spells data, it will call this function
     # to store them
     def set_spells(self, spells):
+        logger.info('Setting spells into the database')
         self.execute_query('DELETE FROM spells;')
         for id in spells:
             self.execute_query(
@@ -100,13 +108,14 @@ class Database:
 
     # During initialisation, the Riot API will check if the database already has champions data
     def get_spells(self):
+        logger.info('Getting spells from the database')
         query = 'SELECT * FROM spells;'
         result = self.execute_query(query)
         spells = {}
         for element in result:
             spells[element[0]] = element[1]
         if len(spells) == 0:
-            print('The database does not contain spells currently')
+            logger.info('Table spells is currently empty')
         return spells
 
     # Decides if the provided guild exists in the database
@@ -123,6 +132,7 @@ class Database:
 
     # Get the guilds as stored in the database
     def get_guilds(self):
+        logger.info('Getting guilds from the database')
         guilds_db = self.execute_query('SELECT * FROM guilds;')
         players_db = self.execute_query('SELECT * FROM players;')
         guilds = {}
@@ -138,30 +148,35 @@ class Database:
             player_guild = player_db[1]
             player_last_informed_game_id = player_db[2]
             if not player_guild in guilds:
-                print('Error, player\'s guild id does not exist inside the guilds table')
+                logger.error(
+                    f'Player\'s guild id {player_guild} does not exist in the database')
                 continue
             if player_name in guilds[player_guild].players:
-                print('Error, player already exists in the guild\'s players')
+                logger.error(
+                    f'Player {player_name} is already one of the guild\'s players')
                 continue
             guilds[player_guild].players[player_name] = bot.Player(player_name)
             guilds[player_guild].players[player_name].last_informed_game_id = player_last_informed_game_id
 
         if len(guilds) == 0:
-            print('The database does not contain guilds currently')
+            logger.info('Table guilds is currently empty')
         return guilds
 
     # Adds a new guild to the database
     def add_guild(self, guild_id, channel_id):
+        logger.info(f'Adding guild {guild_id} to the database')
         if self.guild_exists(guild_id):
-            print('Error, cannot add guild that already exists')
+            logger.error(f'Cannot add guild {guild_id} as it already exists')
             return
         self.execute_query(
             'INSERT INTO guilds (id, channel_id) VALUES (?, ?);', (guild_id, channel_id,))
 
     # Adds the specified player to the specified guild
     def add_player_to_guild(self, guild_id, player_name):
+        logger.info(f'Adding player {player_name} to guild {guild_id}')
         if not self.guild_exists(guild_id):
-            print('Cannot add player to guild that does not exist')
+            logger.error(
+                f'Cannot add player to guild {guild_id} as it does not exist')
             return
         # Execute query to add player
         self.execute_query(
@@ -169,11 +184,14 @@ class Database:
 
     # Removes a player from the provided guild
     def remove_player_from_guild(self, guild_id, player_name):
+        logger.info(f'Removing player {player_name} from guild {guild_id}')
         if not self.guild_exists(guild_id):
-            print('Cannot remove player from guild that does not exist')
+            logger.error(
+                f'Cannot remove player from guild {guild_id} as it does not exist')
             return
         if not self.player_exists(player_name, guild_id):
-            print('Cannot remove player that does not exist')
+            logger.error(
+                f'Cannot remove player {player_name} as it does not exist')
             return
         # Execute query to remove player
         self.execute_query(
@@ -181,8 +199,10 @@ class Database:
 
     # Changes the channel id for the specified guild
     def set_channel_id(self, guild_id, channel_id):
+        logger.info(f'Setting channel id {channel_id} for guild {guild_id}')
         if not self.guild_exists(guild_id):
-            print('Cannot set channel id of guild that does not exist')
+            logger.error(
+                f'Cannot set channel id of guild {guild_id} as it does not exist')
             return
         # Change channel
         self.execute_query(
@@ -190,9 +210,12 @@ class Database:
 
     # Changes the last informed game id of the specified player
     def set_last_informed_game_id(self, player_name, guild_id, last_informed_game_id):
+        logger.info(
+            f'Setting last informed game id for player {player_name} to {last_informed_game_id}')
         # Check the player does exist in the database
         if not self.player_exists(player_name, guild_id):
-            print('Cannot set last informed game id of player that does not exist')
+            logger.error(
+                f'Cannot set last informed game id of player {player_name} as it does not exist')
             return
         # Change last informed game id
         self.execute_query(
@@ -200,18 +223,21 @@ class Database:
 
     # Get all the encrypted summoner ids stored in the database
     def get_encrypted_summoner_ids(self):
+        logger.info('Getting encrypted summoner ids')
         result = self.execute_query('SELECT * FROM encrypted_summoner_ids;')
         # Convert to a dictionary
         encrypted_summoner_ids = {}
         for element in result:
             encrypted_summoner_ids[element[0]] = element[1]
         if len(encrypted_summoner_ids) == 0:
-            print(
-                'The database does not contain encrypted summoner ids currently')
+            logger.info(
+                'Table encrypted_summoner_ids is currently empty')
         return encrypted_summoner_ids
 
     # Add a new encrypted summoner id to the database
     def add_encrypted_summoner_id(self, player_name, encrypted_summoner_id):
+        logger.info(
+            f'Adding encrypted summoner id of player {player_name} to the database')
         self.execute_query(
             'INSERT INTO encrypted_summoner_ids (name, encrypted_summoner_id) VALUES (?, ?);',
             (player_name, encrypted_summoner_id))

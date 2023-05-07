@@ -3,6 +3,14 @@ import asyncio
 import discord
 import bot
 from dotenv import load_dotenv
+import logging
+from logging.handlers import RotatingFileHandler
+
+# Set up logging for the complete application with a rotating log
+handler = RotatingFileHandler(
+    filename='chanclol.log', mode='w', maxBytes=100 * 1024 * 1024, backupCount=10)
+discord.utils.setup_logging(handler=handler)
+logging.getLogger().setLevel(logging.INFO)
 
 # Get discord token from the environment
 load_dotenv()
@@ -18,9 +26,6 @@ activity = discord.Activity(
     type=discord.ActivityType.listening, name="chanclol help")
 client = discord.Client(intents=intents, activity=activity)
 
-# Set up logging of the discord library.
-# If not running with client.run(), the library will not produce any output
-discord.utils.setup_logging()
 
 # Create the bot
 chanclol_bot = bot.Bot(client)
@@ -28,15 +33,15 @@ chanclol_bot = bot.Bot(client)
 
 @client.event
 async def on_ready():
-    print(f' -> {client.user} has connected to Discord')
-    print('Client is connected to the following servers:')
-    for guild in client.guilds:
-        print(guild)
+    logging.info(f'{client.user} has connected to Discord')
+    logging.info(
+        f'Client is connected to the following servers: {", ".join([str(guild) for guild in client.guilds])}')
 
 
 @client.event
 async def on_message(message):
-    print(f' -> Forwarding message from {message.author}: {message.content}')
+    logging.debug(
+        f'Forwarding message from {message.author}: {message.content}')
     await chanclol_bot.receive(message)
 
 

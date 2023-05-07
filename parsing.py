@@ -1,4 +1,7 @@
 from enum import Enum
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class Command(Enum):
@@ -47,7 +50,7 @@ class Parser():
 
     def parse(self, message):
         if not message.startswith(self.prefix):
-            print('Rejecting message not intended for the bot')
+            logger.debug('Rejecting message not intended for the bot')
             self.code = ParseResult.NOT_BOT_PREFIX
             return
 
