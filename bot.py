@@ -28,7 +28,7 @@ class Guild:
         self.players = {}
 
     # Register a new player in the internal list
-    async def register(self, player_name, riot_api):
+    async def register(self, player_name, riot_api, database):
 
         # Check if the player is already in the list
         if player_name in self.players:
@@ -42,19 +42,21 @@ class Guild:
                 f'Could not get league info from Riot API for player {player_name}')
             return message_formatter.no_response_league_api(player_name)
 
-        # Now it's safe to add to the list
+        # Now it's safe to add the new player
         self.players[player_name] = Player(player_name)
+        database.add_player_to_guild(self.id, player_name)
 
         # Send a final message
         print(f'Player {player_name} registered correctly')
         return message_formatter.player_registered(player_name, league_info)
 
     # Unregister a player from the internal list
-    async def unregister(self, player_name):
+    async def unregister(self, player_name, database):
         # Check if the player is already in the list
         if player_name in self.players:
             del self.players[player_name]
             print(f'Player {player_name} unregistered correctly')
+            database.remove_player_from_guild(self.id, player_name)
             return message_formatter.player_unregistered_correctly(player_name)
         else:
             print(f'Player {player_name} was not registered previously')
@@ -69,7 +71,7 @@ class Guild:
         return message_formatter.print(self.players, channel_name)
 
     # Change the channel where the in-game messages will be sent to
-    async def channel(self, new_channel_name, bot):
+    async def channel(self, new_channel_name, bot, database):
         guild = bot.client.get_guild(self.id)
         # First make sure the channel does exist in the guild
         channel = discord.utils.get(guild.channels, name=new_channel_name)
@@ -77,8 +79,9 @@ class Guild:
             print(f'Channel {new_channel_name} does not exist')
             return message_formatter.channel_does_not_exist(new_channel_name)
         else:
-            print(f'Channel changed to {new_channel_name}')
             self.channel_id = channel.id
+            database.set_channel_id(self.id, self.channel_id)
+            print(f'Channel changed to {new_channel_name}')
             return message_formatter.channel_changed(new_channel_name)
 
 
@@ -88,8 +91,6 @@ class Bot:
     # in-game status of all the usernames registered for each guild
 
     def __init__(self, client):
-        # All the guild-related information managed by the bot
-        self.guilds = {}
         # Riot API class
         self.riot_api = riotapi.RiotApi()
         # Keep a copy of the client
@@ -98,6 +99,8 @@ class Bot:
         self.database = database.Database()
         # Initialise the riot API with possible contents inside the database
         self.riot_api.set_database(self.database)
+        # All the guild-related information managed by the bot
+        self.guilds = self.database.get_guilds()
 
     # Main entry point for all messages
     async def receive(self, message):
@@ -117,6 +120,7 @@ class Bot:
             print(f'Initialising guild {message.guild.id}')
             self.guilds[message.guild.id] = Guild(
                 message.guild.id, message.channel.id)
+            self.database.add_guild(message.guild.id, message.channel.id)
             response = message_formatter.welcome(message.channel.name)
             await message.channel.send(content=response.content, embed=response.embed)
         guild = self.guilds[message.guild.id]
@@ -133,13 +137,13 @@ class Bot:
         else:
             print('Command understood')
             if parsed_input.command == parsing.Command.REGISTER:
-                response = await guild.register(' '.join(parsed_input.arguments), self.riot_api)
+                response = await guild.register(' '.join(parsed_input.arguments), self.riot_api, self.database)
             elif parsed_input.command == parsing.Command.UNREGISTER:
-                response = await guild.unregister(' '.join(parsed_input.arguments))
+                response = await guild.unregister(' '.join(parsed_input.arguments), self.database)
             elif parsed_input.command == parsing.Command.PRINT:
                 response = await guild.print(self)
             elif parsed_input.command == parsing.Command.CHANNEL:
-                response = await guild.channel(' '.join(parsed_input.arguments), self)
+                response = await guild.channel(' '.join(parsed_input.arguments), self, self.database)
             elif parsed_input.command == parsing.Command.HELP:
                 response = message_formatter.create_help_message()
             else:
@@ -177,6 +181,8 @@ class Bot:
                             f'Player {player_name} is in game and a message has to be sent')
                         # Update the last informed game_id
                         guild.players[player_name].last_informed_game_id = active_game_info.game_id
+                        self.database.set_last_informed_game_id(
+                            player_name, guild.id, active_game_info.game_id)
                         # Create the complete response
                         message = message_formatter.in_game_message(
                             active_game_info, player_name)
