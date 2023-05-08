@@ -202,7 +202,7 @@ class RiotApi:
             logger.warning('Rate limited')
             return None
         elif response.status_code != 200:
-            logger.error(
+            logger.warning(
                 'Could not make a request to the Riot active game API')
             return None
         else:
@@ -218,7 +218,7 @@ class RiotApi:
                 # The player has not yet been informed of this game, so make the complete
                 # set of requests
                 logger.info(
-                    f'Player {player_name} is in game was never informed')
+                    f'Player {player_name} is in game and was never informed')
                 return await self.create_in_game_info(response.data, False, True)
 
     # Creates the in game info with the current data returned by the in game API,

@@ -115,7 +115,7 @@ class Bot:
     async def receive(self, message):
         # Reject my own messages
         if message.author == self.client.user:
-            logger.info('Rejecting message sent by myself')
+            logger.debug('Rejecting message sent by myself')
             return
 
         # For the time being, ignore messages sent on private channels
@@ -136,17 +136,18 @@ class Bot:
         guild = self.guilds[message.guild.id]
 
         # Parse the input provided and call the appropriate function
-        logger.info(f'Message received: {message.content}')
+        logger.debug(f'Message received: {message.content}')
         parsed_input = parsing.Parser(message.content)
         if parsed_input.code == parsing.ParseResult.NOT_BOT_PREFIX:
-            logger.info('Rejecting message not intended for the bot')
+            logger.debug('Rejecting message not intended for the bot')
         elif parsed_input.code != parsing.ParseResult.OK:
+            logger.info(f'Wrong input: {message.content}')
             syntax_error_string = parsed_input.get_error_string()
-            logger.info(f'Input not valid: {syntax_error_string}')
+            logger.info(f'Reason: {syntax_error_string}')
             response = message_formatter.input_not_valid(syntax_error_string)
             await message.channel.send(content=response.content, embed=response.embed)
         else:
-            logger.info('Command understood')
+            logger.info(f'Command understood: {message.content}')
             if parsed_input.command == parsing.Command.REGISTER:
                 response = await guild.register(' '.join(parsed_input.arguments), self.riot_api, self.database)
             elif parsed_input.command == parsing.Command.UNREGISTER:
