@@ -165,6 +165,7 @@ class Bot:
 
     async def loop_check_games(self):
         while True:
+            await asyncio.sleep(15)
             for guildid in list(self.guilds.keys()):
                 logger.debug(f'Checking players in guild {guildid}')
                 # If a guild has disappeared while in the process of creating a message, simply continue
@@ -207,8 +208,6 @@ class Bot:
                         message = message_formatter.in_game_message(
                             active_game_info, player_name)
                         await self.send_message(message, guild.channel_id)
-
-            await asyncio.sleep(15)
 
     # Send the provided message for the provided channel id, if it exists
     async def send_message(self, message, channel_id):
