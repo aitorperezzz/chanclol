@@ -241,3 +241,19 @@ class Database:
         self.execute_query(
             'INSERT INTO encrypted_summoner_ids (name, encrypted_summoner_id) VALUES (?, ?);',
             (player_name, encrypted_summoner_id))
+
+    # Purges all the encrypted summoner ids from the database, except the ones
+    # that are registered players
+    def keep_encrypted_summoner_ids(self, players):
+        # Perform the query into the database
+        query = 'DELETE FROM encrypted_summoner_ids WHERE name NOT IN ({});'.format(
+            ', '.join('?' * len(players)))
+        self.execute_query(query, players)
+        query = 'SELECT * FROM encrypted_summoner_ids;'
+        final_number_players = self.execute_query(query)
+        if len(final_number_players) != len(players):
+            logger.error(
+                'Final number of encrypted summoner ids in the database is not as expected after purge')
+        else:
+            logger.info(
+                f'Encrypted summoner ids have been correctly purged, leaving {len(players)} players')

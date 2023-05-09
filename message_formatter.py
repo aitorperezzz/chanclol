@@ -1,4 +1,7 @@
 import discord
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 color = discord.Color.teal()
@@ -51,7 +54,7 @@ def player_not_previously_registered(player_name):
     return Message(f'Player **{player_name}** was not registered previously', None)
 
 
-def print(players, channel_name):
+def print_config(players, channel_name):
     embed = discord.Embed(
         title=f'Configuration for this server',
         color=color
@@ -98,10 +101,26 @@ def in_game_message(active_game_info, player_name):
         description=f'Time elapsed: {active_game_info.game_length_minutes} minutes',
         color=color
     )
-    # Get the team the player belongs to. This will be the first team to appear
-    teams = [active_game_info.team_1, active_game_info.team_2]
-    for index in range(len(teams)):
-        add_in_game_team_message(teams[index], index, embed)
+    # Get the team the player belongs to. This will be the first team to appear in the message
+    player_team_index = None
+    for index in range(len(active_game_info.teams)):
+        for participant in active_game_info.teams[index]:
+            if participant.player_name == player_name:
+                player_team_index = index
+                break
+        else:
+            continue
+        break
+    if player_team_index == None:
+        logger.error(
+            f'Player {player_name} has not been found among the game participants')
+        return None
+    # First print the team the player belongs to, then the other one
+    add_in_game_team_message(
+        active_game_info.teams[player_team_index], player_team_index, embed)
+    other_index = 0 if player_team_index == 1 else 1
+    add_in_game_team_message(
+        active_game_info.teams[other_index], other_index, embed)
     return Message(None, embed)
 
 

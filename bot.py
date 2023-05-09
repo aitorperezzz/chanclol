@@ -5,6 +5,7 @@ import discord
 import message_formatter
 import database
 import logging
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +40,7 @@ class Guild:
             return message_formatter.player_already_registered(player_name)
 
         # Check the player in fact exists
-        league_info = await riot_api.get_league_info(player_name, True)
+        league_info = await riot_api.get_league_info(player_name)
         if league_info == None:
             logger.info(
                 f'Could not get league info from Riot API for player {player_name}')
@@ -74,7 +75,7 @@ class Guild:
         if channel_name == None:
             raise ValueError(
                 f'Channel {channel_name} has not been found for this guild')
-        return message_formatter.print(self.players, channel_name)
+        return message_formatter.print_config(self.players, channel_name)
 
     # Change the channel where the in-game messages will be sent to
     async def channel(self, new_channel_name, bot, database):
@@ -110,6 +111,10 @@ class Bot:
         self.riot_api.set_database(self.database)
         # All the guild-related information managed by the bot
         self.guilds = self.database.get_guilds()
+        # The bot will keep track of the last time the encrypted summoner ids were purged
+        # in the database and the riot API
+        self.last_purge_encrypted_summoner_ids = time.time()
+        self.purge_timeout_hours = 3
 
     # Main entry point for all messages
     async def receive(self, message):
@@ -166,6 +171,9 @@ class Bot:
     async def loop_check_games(self):
         while True:
             await asyncio.sleep(15)
+            # Decide if the encrypted summoner ids in the database need to be purged
+            self.purge_encrypted_summoner_ids()
+            # Check on every guild and player
             for guildid in list(self.guilds.keys()):
                 logger.debug(f'Checking players in guild {guildid}')
                 # If a guild has disappeared while in the process of creating a message, simply continue
@@ -185,8 +193,7 @@ class Bot:
                     # Make a request to Riot to check if the player is in game
                     # We need to forward the game id of the last game that was informed for this user in this guild
                     last_informed_game_id = guild.players[player_name].last_informed_game_id
-                    active_game_info = await self.riot_api.get_active_game_info(
-                        player_name, last_informed_game_id, cache=True)
+                    active_game_info = await self.riot_api.get_active_game_info(player_name)
                     if active_game_info == None:
                         logger.warning(
                             f'In-game data for player {player_name} is not available')
@@ -218,3 +225,19 @@ class Bot:
                 f'Could not find channel {channel_id} to send message to')
         else:
             await channel.send(content=message.content, embed=message.embed)
+
+    # Decide if the purge of data in the database and riot API has reached the configured timeout.
+    # If so, call the appropriate function
+    def purge_encrypted_summoner_ids(self):
+        current_time = time.time()
+        if current_time - self.last_purge_encrypted_summoner_ids > self.purge_timeout_hours * 3600:
+            logger.info('Purging encrypted summoner ids in the database')
+            # Create the list of players to keep
+            players_to_keep = []
+            for guild in self.guilds.values():
+                for player in guild.players:
+                    players_to_keep.append(player)
+            # Call riot api to perform the purge
+            players_to_keep = list(set(players_to_keep))
+            self.riot_api.purge_encrypted_summoner_ids(players_to_keep)
+            self.last_purge_encrypted_summoner_ids = current_time

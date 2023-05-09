@@ -39,8 +39,7 @@ class InGameInfo:
         self.in_game = None
         self.game_id = None
         self.game_length_minutes = None
-        self.team_1 = []
-        self.team_2 = []
+        self.teams = []
 
 
 class MasteryInfo:
@@ -112,14 +111,16 @@ class RiotApi:
             [restriction1, restriction2])
         # Riot API will have a database (it will be set by the bot)
         self.database = None
+        # Cache for active games
+        self.active_game_cache = {}
 
     # Returns all the League info for the provided player name.
     # The league info is a list of objects, one for each of the queues for which
     # the player has been placed. If the list is empty, the player is not placed.
-    async def get_league_info(self, player_name, cache=False):
+    async def get_league_info(self, player_name):
 
         # Get the encrypted summoner id with the player name
-        encrypted_summoner_id = await self.get_encrypted_summoner_id(player_name, cache)
+        encrypted_summoner_id = await self.get_encrypted_summoner_id(player_name)
         if encrypted_summoner_id == None:
             logger.info(
                 f'Could not get encrypted summoner id for player {player_name}')
@@ -177,10 +178,10 @@ class RiotApi:
             return MasteryInfo(response.data)
 
     # Returns information about ongoing games
-    async def get_active_game_info(self, player_name, last_informed_game_id, cache=False):
+    async def get_active_game_info(self, player_name):
 
         # Get encrypted summoner id
-        encrypted_summoner_id = await self.get_encrypted_summoner_id(player_name, cache)
+        encrypted_summoner_id = await self.get_encrypted_summoner_id(player_name)
         if encrypted_summoner_id == None:
             logger.error(
                 f'Could not get encrypted summoner id for player {player_name}')
@@ -197,7 +198,8 @@ class RiotApi:
         response = await self._get(url, header)
         if response.status_code == 404:
             logger.debug(f'Player {player_name} is not in game')
-            return await self.create_in_game_info(None, None, False)
+            self.trim_active_game_cache(player_name)
+            return await self.create_in_game_info(None)
         elif response.status_code == 429:
             logger.warning('Rate limited')
             return None
@@ -208,34 +210,62 @@ class RiotApi:
         else:
             logger.debug(f'Player {player_name} is in game')
             game_id = response.data['gameId']
-            if last_informed_game_id == game_id:
-                # The player has already been informed of this game, so no need to
-                # continue with the requests
+            # If we have this game cached, just return it
+            cached_game_info = self.get_game_from_cache(game_id)
+            if cached_game_info != None:
                 logger.debug(
-                    f'Player {player_name} is in game and was already informed')
-                return await self.create_in_game_info(response.data, True, True)
-            else:
-                # The player has not yet been informed of this game, so make the complete
-                # set of requests
-                logger.info(
-                    f'Player {player_name} is in game and was never informed')
-                return await self.create_in_game_info(response.data, False, True)
+                    f'Player {player_name} is in an already cached game')
+                return cached_game_info
+            # If we do not have it cached, we need to make the complete request
+            logger.info(
+                f'Player {player_name} is in a game not found in the cache')
+            active_game = await self.create_in_game_info(response.data)
+            # Finally add the game to the cache
+            self.active_game_cache[game_id] = active_game
+            return active_game
 
-    # Creates the in game info with the current data returned by the in game API,
-    # and a flag indicating if this game was already informed in the past, in which case,
-    # some requests will not be made
-    async def create_in_game_info(self, response, previously_informed, in_game):
+    # The provided player has stopped playing, so remove the associated game id
+    # from the internal list if there is any
+    def trim_active_game_cache(self, player_name):
+        game_id_to_delete = None
+        for active_game in self.active_game_cache.values():
+            for team in active_game.teams:
+                for participant in team:
+                    if participant.player_name == player_name:
+                        game_id_to_delete = active_game.game_id
+                        break
+                else:
+                    continue
+                break
+            else:
+                continue
+            break
+        # If a game was found for this player, delete it from the cache
+        if game_id_to_delete != None:
+            del self.active_game_cache[game_id_to_delete]
+            logger.info(
+                f'Active games cache has been trimmed to {len(self.active_game_cache)} elements')
+
+    # Check if the info for game id provided already exists
+    def get_game_from_cache(self, game_id):
+        if game_id in self.active_game_cache:
+            logger.debug(f'Game id {game_id} has been found in the cache')
+            return self.active_game_cache[game_id]
+        else:
+            logger.debug(f'Game id {game_id} has not been found in the cache')
+            return None
+
+    # Create the in game info with the current data returned by the in game API,
+    # returns None only of the request was not made because of an error
+    async def create_in_game_info(self, response):
         in_game_info = InGameInfo()
 
-        in_game_info.in_game = in_game
+        in_game_info.in_game = response != None
         if not response:
             return in_game_info
         in_game_info.game_id = response['gameId']
         in_game_info.game_length_minutes = round(
             response['gameLength'] / 60)
-        # If the game was already informed in the past, no need to continue
-        if previously_informed:
-            return in_game_info
         # Assign team ids, there should be only two possible values
         team_ids = list(set([participant['teamId']
                         for participant in response['participants']]))
@@ -243,11 +273,13 @@ class RiotApi:
             logger.error('Riot has not provided exactly two team ids')
             return None
         # Fill in both of the teams
+        in_game_info.teams.append([])
+        in_game_info.teams.append([])
         for participant in response['participants']:
             if participant['teamId'] == team_ids[0]:
-                in_game_info.team_1.append(await self.create_participant(participant))
+                in_game_info.teams[0].append(await self.create_participant(participant))
             elif participant['teamId'] == team_ids[1]:
-                in_game_info.team_2.append(await self.create_participant(participant))
+                in_game_info.teams[1].append(await self.create_participant(participant))
             else:
                 logger.error('Participant does not belong to any team')
                 return None
@@ -339,7 +371,7 @@ class RiotApi:
         self.encrypted_summoner_ids = self.database.get_encrypted_summoner_ids()
 
     # Returns the encrypted summoner id provided the player name.
-    async def get_encrypted_summoner_id(self, player_name, cache=False):
+    async def get_encrypted_summoner_id(self, player_name):
 
         # First check if we already have a copy of this value, to avoid
         # executing too many requests
@@ -359,17 +391,30 @@ class RiotApi:
             logger.error('Could not make request to the Riot summoner API')
             return None
 
-        # Keep a copy of the encrypted summoner id for later, in case the data
-        # is requested to be cached
         if not response.data:
             logger.info(f'Player {player_name} not found')
             return None
+
+        # Keep a copy of the encrypted summoner id for later
         encrypted_summoner_id = response.data['id']
-        if cache:
-            self.encrypted_summoner_ids[player_name] = encrypted_summoner_id
-            self.database.add_encrypted_summoner_id(
-                player_name, encrypted_summoner_id)
+        self.encrypted_summoner_ids[player_name] = encrypted_summoner_id
+        self.database.add_encrypted_summoner_id(
+            player_name, encrypted_summoner_id)
         return encrypted_summoner_id
+
+    # Purges the current content of encrypted summoner ids by taking into account
+    # the list of players it needs to keep
+    def purge_encrypted_summoner_ids(self, players_to_keep):
+        logger.info(
+            f'Current number of encrypted summoner ids: {len(self.encrypted_summoner_ids)}')
+        logger.info(
+            f'Number of encrypted summoner ids to keep: {len(players_to_keep)}')
+        # First purge the data in the internal dictionary
+        for player in [player for player in self.encrypted_summoner_ids]:
+            if not player in players_to_keep:
+                self.encrypted_summoner_ids.pop(player)
+        # Now that the final dictionary is built, call the database to also perform the purge
+        self.database.keep_encrypted_summoner_ids(players_to_keep)
 
     # Returns a header that includes the API key.
     # Returns None of the header could not be built.
