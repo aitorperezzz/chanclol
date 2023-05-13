@@ -6,6 +6,8 @@ import message_formatter
 import database
 import logging
 import time
+import math
+import stopwatch
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +20,9 @@ class Player:
         self.name = name
         # The id of the last game that was informed for this user
         self.last_informed_game_id = None
+        # Create a stopwatch that will keep track of the last time the in game status was checked
+        # for this player
+        self.stopwatch = stopwatch.StopWatch(15 * 1000)  # Milliseconds
 
 
 class Guild:
@@ -168,53 +173,60 @@ class Bot:
             if response:
                 await message.channel.send(content=response.content, embed=response.embed)
 
+    # Get a list of all the guild ids where the player is registered
+    def get_guild_ids(self, player_name):
+        guild_ids = []
+        for guild in self.guilds.values():
+            if player_name in guild.players:
+                guild_ids.append(guild.id)
+        return guild_ids
+
+    # Main loop of the application
     async def loop_check_games(self):
         while True:
-            await asyncio.sleep(15)
+            # TODO: investigate if this wait time needs to be updated according to the number of users registered
+            await asyncio.sleep(5)
             # Decide if the encrypted summoner ids in the database need to be purged
             self.purge_encrypted_summoner_ids()
-            # Check on every guild and player
-            for guildid in list(self.guilds.keys()):
-                logger.debug(f'Checking players in guild {guildid}')
-                # If a guild has disappeared while in the process of creating a message, simply continue
-                if not guildid in self.guilds:
-                    logger.warning(
-                        f'Guild {guildid} has been removed while looping')
-                    continue
-                guild = self.guilds[guildid]
-                for player_name in list(guild.players.keys()):
+            # Find a player to check in this iteration
+            player_name = self.select_player_to_check()
+            if player_name == None:
+                continue
+            # We have a player to check
+            logger.debug(f'Checking in game status of player {player_name}')
+            # Make a request to Riot to check if the player is in game
+            active_game_info = await self.riot_api.get_active_game_info(player_name)
+            if active_game_info == None:
+                logger.warning(
+                    f'In-game data for player {player_name} is not available')
+                continue
+            elif not active_game_info.in_game:
+                logger.debug(
+                    f'Player {player_name} is currently not in game')
+                # TODO: check if the timeout for this player needs to be updated
+                continue
+            # Player is in game
+            # Get the guilds where this player is registered
+            guild_ids_player = self.get_guild_ids(player_name)
+            for guild_id in guild_ids_player:
+                guild = self.guilds[guild_id]
+                # Get the last game that was informed for this player in this guild
+                last_informed_game_id = guild.players[player_name].last_informed_game_id
+                if last_informed_game_id == active_game_info.game_id:
                     logger.debug(
-                        f'Checking in game status of player {player_name}')
-                    # If a player has been unregistered in the process of creating a message, simply continue
-                    if not player_name in guild.players:
-                        logger.warning(
-                            f'Player {player_name} has been removed from the list while looping')
-                        continue
-                    # Make a request to Riot to check if the player is in game
-                    # We need to forward the game id of the last game that was informed for this user in this guild
-                    last_informed_game_id = guild.players[player_name].last_informed_game_id
-                    active_game_info = await self.riot_api.get_active_game_info(player_name)
-                    if active_game_info == None:
-                        logger.warning(
-                            f'In-game data for player {player_name} is not available')
-                    elif not active_game_info.in_game:
-                        logger.debug(
-                            f'Player {player_name} is currently not in game')
-                    elif last_informed_game_id == active_game_info.game_id:
-                        logger.debug(
-                            f'Message for player {player_name} for this game was already sent')
-                    else:
-                        logger.info(
-                            f'Player {player_name} is in game and a message has to be sent')
-                        # Update the last informed game_id
-                        logger.info('Updating last informed game id')
-                        guild.players[player_name].last_informed_game_id = active_game_info.game_id
-                        self.database.set_last_informed_game_id(
-                            player_name, guild.id, active_game_info.game_id)
-                        # Create the complete response
-                        message = message_formatter.in_game_message(
-                            active_game_info, player_name)
-                        await self.send_message(message, guild.channel_id)
+                        f'Message for player {player_name} in guild {guild_id} for this game was already sent')
+                else:
+                    logger.info(
+                        f'Player {player_name} is in game and a message has to be sent to guild {guild_id}')
+                    # Update the last informed game_id
+                    logger.info('Updating last informed game id')
+                    guild.players[player_name].last_informed_game_id = active_game_info.game_id
+                    self.database.set_last_informed_game_id(
+                        player_name, guild.id, active_game_info.game_id)
+                    # Create the complete response
+                    message = message_formatter.in_game_message(
+                        active_game_info, player_name)
+                    await self.send_message(message, guild.channel_id)
 
     # Send the provided message for the provided channel id, if it exists
     async def send_message(self, message, channel_id):
@@ -241,3 +253,36 @@ class Bot:
             players_to_keep = list(set(players_to_keep))
             self.riot_api.purge_encrypted_summoner_ids(players_to_keep)
             self.last_purge_encrypted_summoner_ids = current_time
+
+    # Select the best player to check the in game status in this iteration
+    def select_player_to_check(self):
+        player_to_check = None
+        last_informed = math.inf
+        for guild in self.guilds.values():
+            for player in guild.players.values():
+                if player.stopwatch.timeout_reached():
+                    start_time = player.stopwatch.get_start_time()
+                    if start_time < last_informed:
+                        # This player is available to be checked, and was checked before the current best,
+                        # so it is a better candidate
+                        logger.debug(
+                            f'Player {player.name} is a better candidate')
+                        last_informed = start_time
+                        player_to_check = player
+                    else:
+                        # This player is available to check, but has been checked more recently than others,
+                        # so for the moment do not check it
+                        logger.debug(
+                            f'Rejecting player {player.name} as it has been checked more recently than others')
+                else:
+                    logger.debug(
+                        f'Timeout still not reached for player {player.name}')
+        # Here we in principle have selected the best option to check
+        if player_to_check == None:
+            logger.debug('Not checking any player during this iteration')
+            return None
+        else:
+            logger.debug(
+                f'Selecting player {player_to_check.name} to be checked')
+            player_to_check.stopwatch.start()
+            return player_to_check.name
