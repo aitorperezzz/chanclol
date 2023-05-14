@@ -1,7 +1,5 @@
 import requests
-import os
 import time
-from dotenv import load_dotenv
 import rate_limiter
 import logging
 
@@ -26,6 +24,7 @@ class Participant:
 
     def __init__(self):
         self.player_name = None
+        self.player_id = None
         self.champion_name = None
         self.spell1_name = None
         self.spell2_name = None
@@ -83,11 +82,11 @@ class Response:
 
 
 class RiotApi:
-    def __init__(self):
+    def __init__(self, api_key):
         # Riot schema
         self.riot_schema = 'https://euw1.api.riotgames.com'
-        # Variable that will hold the API key, can be updated on the fly
-        self.api_key = None
+        # Variable that will hold the API key
+        self.api_key = api_key
         # Routes inside the riot API
         self.route_summoner = '/lol/summoner/v4/summoners/by-name/'
         self.route_league = '/lol/league/v4/entries/by-summoner/'
@@ -100,8 +99,8 @@ class RiotApi:
         # Dragon route to fetch info about spells
         self.route_spells = 'http://ddragon.leagueoflegends.com/cdn/13.9.1/data/en_US/summoner.json'
         self.data_spells = None
-        # Internal copy of encrypted summoner ids to prevent too many requests
-        self.encrypted_summoner_ids = {}
+        # Dictionary of encrypted summoner ids as keys, and player names as values
+        self.names = {}
         # Create a rate limiter that will give permissions to make requests to riot API
         # 100 requests in 2 minutes
         restriction1 = rate_limiter.Restriction(100, 2 * 60 * 1000)
@@ -114,22 +113,13 @@ class RiotApi:
         # Cache for active games
         self.active_game_cache = {}
 
-    # Returns all the League info for the provided player name.
+    # Returns all the League info for the provided player id.
     # The league info is a list of objects, one for each of the queues for which
     # the player has been placed. If the list is empty, the player is not placed.
-    async def get_league_info(self, player_name):
-
-        # Get the encrypted summoner id with the player name
-        encrypted_summoner_id = await self.get_encrypted_summoner_id(player_name)
-        if encrypted_summoner_id == None:
-            logger.info(
-                f'Could not get encrypted summoner id for player {player_name}')
-            return None
-        logger.debug('Encrypted summoner id for player {}: {}'.format(
-            player_name, encrypted_summoner_id))
+    async def get_league_info(self, player_id):
 
         # Build the request
-        url = self.riot_schema + self.route_league + encrypted_summoner_id
+        url = self.riot_schema + self.route_league + player_id
         header = self.build_api_header()
         if header == None:
             logger.error('Could not build the header for the request')
@@ -147,18 +137,11 @@ class RiotApi:
             result.append(LeagueInfo(league))
         return result
 
-    # Returns the mastery info of certain player with certain champion.
-    async def get_mastery_info(self, player_name, champion_id):
-
-        # Get encrypted summoner id
-        encrypted_summoner_id = await self.get_encrypted_summoner_id(player_name)
-        if encrypted_summoner_id == None:
-            logger.error(
-                f'Could not get encrypted summoner id for player {player_name}')
-            return None
+    # Returns the mastery of certain player with certain champion
+    async def get_mastery_info(self, player_id, champion_id):
 
         # Build the request
-        url = self.riot_schema + self.route_mastery + encrypted_summoner_id
+        url = self.riot_schema + self.route_mastery + player_id
         url += self.route_mastery_by_champ + str(champion_id)
         header = self.build_api_header()
         if header == None:
@@ -169,26 +152,20 @@ class RiotApi:
         response = await self._get(url, header)
         if response.status_code == 404:
             logger.info(
-                f'Mastery was not found for this player {player_name} and champion {champion_id} combination')
+                f'Mastery was not found for this player {self.get_player_name(player_id)} and champion {champion_id} combination')
             return MasteryInfo(None)
         elif response.status_code != 200:
-            logger.error(f'Error retrieving mastery for player {player_name}')
+            logger.error(
+                f'Error retrieving mastery for player {self.get_player_name(player_id)}')
             return None
         else:
             return MasteryInfo(response.data)
 
     # Returns information about ongoing games
-    async def get_active_game_info(self, player_name):
-
-        # Get encrypted summoner id
-        encrypted_summoner_id = await self.get_encrypted_summoner_id(player_name)
-        if encrypted_summoner_id == None:
-            logger.error(
-                f'Could not get encrypted summoner id for player {player_name}')
-            return None
+    async def get_active_game_info(self, player_id):
 
         # Build the request
-        url = self.riot_schema + self.route_active_games + encrypted_summoner_id
+        url = self.riot_schema + self.route_active_games + player_id
         header = self.build_api_header()
         if header == None:
             logger.error('Could not build the header for the request')
@@ -196,9 +173,10 @@ class RiotApi:
 
         # Make the request and check everything is OK
         response = await self._get(url, header)
+        player_name = self.get_player_name(player_id)
         if response.status_code == 404:
             logger.debug(f'Player {player_name} is not in game')
-            self.trim_active_game_cache(player_name)
+            self.trim_active_game_cache(player_id)
             return await self.create_in_game_info(None)
         elif response.status_code == 429:
             logger.warning('Rate limited')
@@ -226,25 +204,22 @@ class RiotApi:
 
     # The provided player has stopped playing, so remove the associated game id
     # from the internal list if there is any
-    def trim_active_game_cache(self, player_name):
-        game_id_to_delete = None
-        for active_game in self.active_game_cache.values():
-            for team in active_game.teams:
-                for participant in team:
-                    if participant.player_name == player_name:
-                        game_id_to_delete = active_game.game_id
-                        break
-                else:
-                    continue
-                break
-            else:
-                continue
-            break
+    def trim_active_game_cache(self, player_id):
+        game_id_to_delete = self.get_game_id_for_player(player_id)
         # If a game was found for this player, delete it from the cache
         if game_id_to_delete != None:
             del self.active_game_cache[game_id_to_delete]
             logger.info(
                 f'Active games cache has been trimmed to {len(self.active_game_cache)} elements')
+
+    # Gets the game id that corresponds to the provided player, if any
+    def get_game_id_for_player(self, player_id):
+        for active_game in self.active_game_cache.values():
+            for team in active_game.teams:
+                for participant in team:
+                    if participant.player_id == player_id:
+                        return active_game.game_id
+        return None
 
     # Check if the info for game id provided already exists
     def get_game_from_cache(self, game_id):
@@ -292,7 +267,8 @@ class RiotApi:
             return None
         participant = Participant()
         participant.player_name = response['summonerName']
-        # To get the champion name, I need to make a request
+        participant.player_id = response['summonerId']
+        # Champion name and spell names
         champion_id = response['championId']
         participant.champion_name = await self.get_champion_name(champion_id)
         if participant.champion_name == None:
@@ -303,7 +279,7 @@ class RiotApi:
         participant.spell2_name = await self.get_spell_name(response['spell2Id'])
         if participant.spell2_name == None:
             return None
-        participant.mastery = await self.get_mastery_info(participant.player_name, champion_id)
+        participant.mastery = await self.get_mastery_info(participant.player_id, champion_id)
         if participant.mastery == None:
             return None
         return participant
@@ -368,15 +344,15 @@ class RiotApi:
         self.database = database
         self.data_champions = self.database.get_champions()
         self.data_spells = self.database.get_spells()
-        self.encrypted_summoner_ids = self.database.get_encrypted_summoner_ids()
+        self.names = self.database.get_names()
 
-    # Returns the encrypted summoner id provided the player name.
-    async def get_encrypted_summoner_id(self, player_name):
+    # Returns the player id of the provided player name
+    async def get_player_id(self, player_name):
 
-        # First check if we already have a copy of this value, to avoid
-        # executing too many requests
-        if player_name in self.encrypted_summoner_ids:
-            return self.encrypted_summoner_ids[player_name]
+        # First check if we already have an id for this player
+        for player_id in self.names:
+            if self.names[player_id] == player_name:
+                return player_id
 
         # Build the request
         url = self.riot_schema + self.route_summoner + player_name
@@ -395,35 +371,47 @@ class RiotApi:
             logger.info(f'Player {player_name} not found')
             return None
 
-        # Keep a copy of the encrypted summoner id for later
-        encrypted_summoner_id = response.data['id']
-        self.encrypted_summoner_ids[player_name] = encrypted_summoner_id
-        self.database.add_encrypted_summoner_id(
-            player_name, encrypted_summoner_id)
-        return encrypted_summoner_id
+        # Keep a copy of the player id for later
+        player_id = response.data['id']
+        if player_id in self.names:
+            # In this case, we have an alternative name for the player, so nothing to do
+            logger.debug(
+                f'Player with id {player_id} already exists in the database with another name')
+        else:
+            logger.debug(
+                f'Caching player {player_name} with player id {player_id}')
+            self.names[player_id] = player_name
+            self.database.add_name(player_id, player_name)
+        return player_id
 
-    # Purges the current content of encrypted summoner ids by taking into account
-    # the list of players it needs to keep
-    def purge_encrypted_summoner_ids(self, players_to_keep):
-        logger.info(
-            f'Current number of encrypted summoner ids: {len(self.encrypted_summoner_ids)}')
-        logger.info(
-            f'Number of encrypted summoner ids to keep: {len(players_to_keep)}')
-        # First purge the data in the internal dictionary
-        for player in [player for player in self.encrypted_summoner_ids]:
-            if not player in players_to_keep:
-                self.encrypted_summoner_ids.pop(player)
+    # Returns the player name provided the id. In principle, only names for players
+    # which have already been registered will be requested, so they must be found in memory
+    def get_player_name(self, player_id):
+        if player_id in self.names:
+            return self.names[player_id]
+        else:
+            logger.error(f'Player name not found for id {player_id}')
+            return None
+
+    # Purges the current content of player names by taking into account
+    # the list of ids to keep
+    def purge_names(self, ids_to_keep):
+        logger.info(f'Current number of names: {len(self.names)}')
+        logger.info(f'Names to keep: {len(ids_to_keep)}')
+        # First purge the data in memory
+        for id in [id for id in self.names]:
+            if not id in ids_to_keep:
+                self.names.pop(id)
         # Now that the final dictionary is built, call the database to also perform the purge
-        self.database.keep_encrypted_summoner_ids(players_to_keep)
+        self.database.keep_names(ids_to_keep)
 
     # Returns a header that includes the API key.
     # Returns None of the header could not be built.
     def build_api_header(self):
-        api_key = self.get_api_key()
-        if api_key == None:
-            logger.error('Could not get the Riot API key')
+        if self.api_key == None:
+            logger.error('API key is not available')
             return None
-        return {'X-Riot-Token': api_key}
+        return {'X-Riot-Token': self.api_key}
 
     # Makes a simple request using the requests module.
     async def _get(self, url, header):
@@ -438,15 +426,3 @@ class RiotApi:
 
         # Make the request and check the connection was good
         return Response(requests.get(url, headers=header))
-
-    # Returns the API key as found in the environment
-    def get_api_key(self):
-        load_dotenv()
-        if self.api_key != None:
-            return self.api_key
-        else:
-            self.api_key = os.getenv('RIOT_API_KEY')
-            if self.api_key == None:
-                logger.error(
-                    'RIOT_API_KEY has not been found in the environment')
-            return self.api_key

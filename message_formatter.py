@@ -27,7 +27,7 @@ def player_already_registered(player_name):
     return Message(f'Player **{player_name}** is already registered', None)
 
 
-def no_response_league_api(player_name):
+def no_response_riot_api(player_name):
     return Message(f'Got no response from Riot API for player **{player_name}**', None)
 
 
@@ -54,16 +54,16 @@ def player_not_previously_registered(player_name):
     return Message(f'Player **{player_name}** was not registered previously', None)
 
 
-def print_config(players, channel_name):
+def print_config(player_names, channel_name):
     embed = discord.Embed(
         title=f'Configuration for this server',
         color=color
     )
-    if len(players) == 0:
+    if len(player_names) == 0:
         embed.add_field(name='Players registered:', value='None', inline=False)
     else:
         embed.add_field(name='Players registered:',
-                        value=', '.join(players.keys()), inline=False)
+                        value=', '.join(player_names), inline=False)
     embed.add_field(name='Channel for in-game messages:',
                     value=channel_name, inline=False)
     return Message(None, embed)
@@ -95,7 +95,7 @@ def create_help_message():
     return Message(None, embed)
 
 
-def in_game_message(active_game_info, player_name):
+def in_game_message(player_id, player_name, active_game_info):
     embed = discord.Embed(
         title=f'Player {player_name} is in game',
         description=f'Time elapsed: {active_game_info.game_length_minutes} minutes',
@@ -105,7 +105,7 @@ def in_game_message(active_game_info, player_name):
     player_team_index = None
     for index in range(len(active_game_info.teams)):
         for participant in active_game_info.teams[index]:
-            if participant.player_name == player_name:
+            if participant.player_id == player_id:
                 player_team_index = index
                 break
         else:
@@ -117,10 +117,10 @@ def in_game_message(active_game_info, player_name):
         return None
     # First print the team the player belongs to, then the other one
     add_in_game_team_message(
-        active_game_info.teams[player_team_index], player_team_index, embed)
+        active_game_info.teams[player_team_index], 0, embed)
     other_index = 0 if player_team_index == 1 else 1
     add_in_game_team_message(
-        active_game_info.teams[other_index], other_index, embed)
+        active_game_info.teams[other_index], 1, embed)
     return Message(None, embed)
 
 
