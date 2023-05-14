@@ -30,7 +30,7 @@ class Parser():
         self.code = None
         self.command = None
         self.arguments = None
-        self.prefix = 'chanclol'
+        self.prefixes = ['chanclol', 'Chanclol']
         self.parse(message)
 
     def get_error_string(self):
@@ -49,13 +49,18 @@ class Parser():
                 'ParsedInput.get_error_string() called with bad code')
 
     def parse(self, message):
-        if not message.startswith(self.prefix):
+        if not message.startswith(tuple(self.prefixes)):
             logger.debug('Rejecting message not intended for the bot')
             self.code = ParseResult.NOT_BOT_PREFIX
             return
 
         # Get the command if it exists
-        words = message[len(self.prefix):].strip(' \n\t').split()
+        prefix = None
+        for prefix in self.prefixes:
+            if message.startswith(prefix):
+                prefix = prefix
+                break
+        words = message[len(prefix):].strip(' \n\t').split()
         if len(words) == 0:
             self.code = ParseResult.NO_COMMAND
             return
