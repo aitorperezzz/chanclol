@@ -29,6 +29,7 @@ class Participant:
         self.spell1_name = None
         self.spell2_name = None
         self.mastery = None
+        self.league_info = None
 
 
 class InGameInfo:
@@ -133,10 +134,7 @@ class RiotApi:
             return None
 
         # Prepare the final result
-        result = []
-        for league in response.data:
-            result.append(LeagueInfo(league))
-        return result
+        return self.create_league_info(response)
 
     # Returns the mastery of certain player with certain champion
     async def get_mastery_info(self, player_id, champion_id):
@@ -283,7 +281,21 @@ class RiotApi:
         participant.mastery = await self.get_mastery_info(participant.player_id, champion_id)
         if participant.mastery == None:
             return None
+        # Get the current rank of the player
+        participant.league_info = await self.get_league_info(participant.player_id)
         return participant
+
+    def create_league_info(self, response):
+        if not response:
+            logger.error(f'Cannot create league info, response not available')
+            return []
+        relevant_queues = ['RANKED_SOLO_5x5', 'RANKED_FLEX_SR']
+        result = []
+        for league in response.data:
+            league_info = LeagueInfo(league)
+            if league_info.queue_type in relevant_queues:
+                result.append(league_info)
+        return result
 
     # Creates the internal data for champions
     async def request_champion_data(self):

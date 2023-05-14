@@ -40,10 +40,23 @@ def player_registered(player_name, league_info):
         color=color
     )
     for league in league_info:
-        name = f'**{league.queue_type}**'
-        value = f'{league.tier} {league.rank} {league.lps} LPs\n'
+        name = f'**{league_message_name(league.queue_type)}**'
+        value = league_message_value(league)
         embed.add_field(name=name, value=value, inline=False)
     return Message(content, embed)
+
+
+def league_message_name(queue_type):
+    if queue_type == 'RANKED_SOLO_5x5':
+        return 'Ranked Solo'
+    elif queue_type == 'RANKED_FLEX_SR':
+        return 'Ranked Flex'
+    else:
+        raise ValueError(f'Queue type not understood: {queue_type}')
+
+
+def league_message_value(league):
+    return f'{league.tier} {league.rank} {league.lps} LPs'
 
 
 def player_unregistered_correctly(player_name):
@@ -130,9 +143,10 @@ def add_in_game_team_message(team, team_index, embed):
     for participant in team:
         value += f'**{participant.champion_name}** ({participant.player_name})\n'
         if participant.mastery.available:
-            value += f'- Mastery {participant.mastery.level}, played last time {participant.mastery.days_since_last_played} days ago\n'
+            value += f'- Mastery {participant.mastery.level}, last played {participant.mastery.days_since_last_played} days ago\n'
         else:
             value += f'- Mastery not available\n'
-        value += f'- {participant.spell1_name}, {participant.spell2_name}'
-        value += '\n'
+        value += f'- {participant.spell1_name}, {participant.spell2_name}\n'
+        for league in participant.league_info:
+            value += f'- {league_message_name(league.queue_type)}: {league_message_value(league)}\n'
     embed.add_field(name=name, value=value)

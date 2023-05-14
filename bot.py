@@ -248,15 +248,15 @@ class Bot:
                 else:
                     logger.info(
                         f'Player {player_name} is in game and a message has to be sent to guild {guild_id}')
+                    # Create the complete response
+                    message = message_formatter.in_game_message(
+                        player_id, player_name, active_game_info)
+                    await self.send_message(message, guild.channel_id)
                     # Update the last informed game_id
                     logger.info('Updating last informed game id')
                     guild.last_informed_game_ids[player_id] = active_game_info.game_id
                     self.database.set_last_informed_game_id(
                         player_id, guild.id, active_game_info.game_id)
-                    # Create the complete response
-                    message = message_formatter.in_game_message(
-                        player_id, player_name, active_game_info)
-                    await self.send_message(message, guild.channel_id)
 
     # Send the provided message in the provided channel id, if it exists
     async def send_message(self, message, channel_id):
