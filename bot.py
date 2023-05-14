@@ -216,7 +216,7 @@ class Bot:
             # TODO: investigate if this wait time needs to be updated according to the number of users registered
             await asyncio.sleep(5)
             # Decide if the player names need to be purged
-            self.purge_player_names()
+            await self.purge_player_names()
             # Find a player to check in this iteration
             player_id = self.select_player_to_check()
             if player_id == None:
@@ -270,7 +270,7 @@ class Bot:
 
     # Decide if the purge of player names in the database and riot API has reached the configured timeout.
     # If so, do the corresponding job
-    def purge_player_names(self):
+    async def purge_player_names(self):
         current_time = time.time()
         if current_time - self.last_purge_player_names < self.timeout_purge_player_names * 3600:
             return
@@ -278,9 +278,8 @@ class Bot:
         player_ids_to_keep = self.players.keys()
         # Perform the purge in the riot API and in the database
         logger.info('Purging player names')
-        self.riot_api.purge_names(player_ids_to_keep)
+        await self.riot_api.purge_names(player_ids_to_keep)
         self.last_purge_player_names = current_time
-        # TODO: update the names of the player ids we want to keep
 
     # Select the best player to check the in game status in this iteration
     def select_player_to_check(self):

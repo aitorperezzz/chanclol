@@ -88,7 +88,8 @@ class RiotApi:
         # Variable that will hold the API key
         self.api_key = api_key
         # Routes inside the riot API
-        self.route_summoner = '/lol/summoner/v4/summoners/by-name/'
+        self.route_summoner_by_name = '/lol/summoner/v4/summoners/by-name/'
+        self.route_summoner = '/lol/summoner/v4/summoners/'
         self.route_league = '/lol/league/v4/entries/by-summoner/'
         self.route_mastery = '/lol/champion-mastery/v4/champion-masteries/by-summoner/'
         self.route_mastery_by_champ = '/by-champion/'
@@ -355,7 +356,7 @@ class RiotApi:
                 return player_id
 
         # Build the request
-        url = self.riot_schema + self.route_summoner + player_name
+        url = self.riot_schema + self.route_summoner_by_name + player_name
         header = self.build_api_header()
         if header == None:
             logger.error('Could not build the request header')
@@ -393,17 +394,46 @@ class RiotApi:
             logger.error(f'Player name not found for id {player_id}')
             return None
 
+    # Specifically makes a request to get the current player name
+    async def request_player_name(self, player_id):
+        # Build the request
+        url = self.riot_schema + self.route_summoner + player_id
+        header = self.build_api_header()
+        if header == None:
+            logger.error('Could not build the request header')
+            return None
+
+        # Make the request to the server and check the response
+        response = await self._get(url, header=header)
+        if response.status_code != 200:
+            logger.error('Could not make request to the Riot summoner API')
+            return None
+
+        if not response.data:
+            logger.info(f'Name of player {player_id} could not be requested')
+            return None
+
+        # Return just the name
+        return response.data['name']
+
     # Purges the current content of player names by taking into account
     # the list of ids to keep
-    def purge_names(self, ids_to_keep):
+    async def purge_names(self, ids_to_keep):
         logger.info(f'Current number of names: {len(self.names)}')
         logger.info(f'Names to keep: {len(ids_to_keep)}')
         # First purge the data in memory
         for id in [id for id in self.names]:
             if not id in ids_to_keep:
                 self.names.pop(id)
+        # Take the time now to update the player names to the latest values informed by riot
+        for id in self.names:
+            name = await self.request_player_name(id)
+            if name == None:
+                logger.error(f'Name of player {id} was not found')
+                continue
+            self.names[id] = name
         # Now that the final dictionary is built, call the database to also perform the purge
-        self.database.keep_names(ids_to_keep)
+        self.database.update_names(self.names)
 
     # Returns a header that includes the API key.
     # Returns None of the header could not be built.

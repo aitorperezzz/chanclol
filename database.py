@@ -257,16 +257,20 @@ class Database:
             (player_id, player_name))
 
     # Purges all the names from the database, except some that we need to keep
-    def keep_names(self, player_ids):
-        # Perform the query into the database
+    def update_names(self, names_to_keep):
+        # Perform query into the database to delete the items we do not want
         query = 'DELETE FROM names WHERE id NOT IN ({});'.format(
-            ', '.join('?' * len(player_ids)))
-        self.execute_query(query, player_ids)
+            ', '.join('?' * len(names_to_keep.keys())))
+        self.execute_query(query, tuple(names_to_keep.keys()))
         query = 'SELECT * FROM names;'
         final_number_players = self.execute_query(query)
-        if len(final_number_players) != len(player_ids):
+        if len(final_number_players) != len(names_to_keep.keys()):
             logger.error(
                 'Final number of player names in the database is not as expected after purge')
-        else:
-            logger.info(
-                f'Names have been correctly purged, leaving {len(player_ids)} players')
+            return
+        logger.info(
+            f'Names have been correctly purged, leaving {len(names_to_keep.keys())} players')
+        # Update the names of the players that are being kept
+        for id in names_to_keep:
+            query = 'UPDATE names SET name=? WHERE id=?;'
+            self.execute_query(query, (names_to_keep[id], id))
