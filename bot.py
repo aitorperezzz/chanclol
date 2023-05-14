@@ -310,6 +310,6 @@ class Bot:
             return None
         else:
             logger.debug(
-                f'Selecting player {player_to_check.name} to be checked')
+                f'Selecting player {self.riot_api.get_player_name(player_to_check.id)} to be checked')
             player_to_check.stopwatch.start()
             return player_to_check.id
