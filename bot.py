@@ -31,8 +31,8 @@ class Guild:
         self.id = id
         # Id of the channel where the bot will send in-game messages
         self.channel_id = channel_id
-        # Players registered in this guild together with the last game id
-        # for which a message was sent for the player in the guild
+        # Players registered in this guild together with the game id
+        # that was last informed for them in this guild
         self.last_informed_game_ids = {}
 
 
@@ -137,8 +137,9 @@ class Bot:
         # Add it to the list of players if necessary
         if not player_id in self.players:
             self.players[player_id] = Player(player_id)
-        # Add it to the guild
+        # Add to the guild
         guild.last_informed_game_ids[player_id] = None
+        # Add to the database
         self.database.add_player_to_guild(player_id, guild.id)
 
         # Send a final message
@@ -160,6 +161,7 @@ class Bot:
             logger.info(
                 f'Unregistering player {player_name} from guild {guild.id}')
             del guild.last_informed_game_ids[player_id]
+            # Remove from the database
             self.database.remove_player_from_guild(player_id, guild.id)
             logger.info(f'Player {player_name} has been unregistered')
             # See if the player is in any other guild. If not, remove it completely
