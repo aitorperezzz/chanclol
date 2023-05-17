@@ -151,11 +151,11 @@ class RiotApi:
         response = await self._get(url, header)
         if response.status_code == 404:
             logger.info(
-                f'Mastery was not found for this player {self.get_player_name(player_id)} and champion {champion_id} combination')
+                f'Mastery was not found for this player {await self.get_player_name(player_id)} and champion {champion_id} combination')
             return MasteryInfo(None)
         elif response.status_code != 200:
             logger.error(
-                f'Error retrieving mastery for player {self.get_player_name(player_id)}')
+                f'Error retrieving mastery for player {await self.get_player_name(player_id)}')
             return None
         else:
             return MasteryInfo(response.data)
@@ -172,7 +172,7 @@ class RiotApi:
 
         # Make the request and check everything is OK
         response = await self._get(url, header)
-        player_name = self.get_player_name(player_id)
+        player_name = await self.get_player_name(player_id)
         if response.status_code == 404:
             logger.debug(f'Player {player_name} is not in game')
             self.trim_active_game_cache(player_id)
@@ -398,13 +398,18 @@ class RiotApi:
         return player_id
 
     # Returns the player name provided the id. In principle, only names for players
-    # which have already been registered will be requested, so they must be found in memory
-    def get_player_name(self, player_id):
+    # which have already been registered will be requested, except in the case of error messages.
+    # In these cases, a request will be made
+    async def get_player_name(self, player_id):
         if player_id in self.names:
             return self.names[player_id]
         else:
-            logger.error(f'Player name not found for id {player_id}')
-            return None
+            logger.debug(f'Requesting name of player {player_id}')
+            name = await self.request_player_name(player_id)
+            if name != None:
+                self.names[player_id] = name
+                self.database.add_name(player_id, name)
+            return name
 
     # Specifically makes a request to get the current player name
     async def request_player_name(self, player_id):

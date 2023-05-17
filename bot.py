@@ -198,7 +198,7 @@ class Bot:
             raise ValueError(
                 f'Channel {channel_name} has not been found for this guild')
         # Create list of player names in this guild
-        names = [self.riot_api.get_player_name(
+        names = [await self.riot_api.get_player_name(
             id) for id in guild.last_informed_game_ids]
         return message_formatter.print_config(names, channel_name)
 
@@ -218,10 +218,10 @@ class Bot:
             # Decide if the player names need to be purged
             await self.purge_player_names()
             # Find a player to check in this iteration
-            player_id = self.select_player_to_check()
+            player_id = await self.select_player_to_check()
             if player_id == None:
                 continue
-            player_name = self.riot_api.get_player_name(player_id)
+            player_name = await self.riot_api.get_player_name(player_id)
             # We have a player to check
             logger.debug(f'Checking in game status of player {player_name}')
             # Make a request to Riot to check if the player is in game
@@ -282,7 +282,7 @@ class Bot:
         self.last_purge_player_names = current_time
 
     # Select the best player to check the in game status in this iteration
-    def select_player_to_check(self):
+    async def select_player_to_check(self):
         player_to_check = None
         last_informed = math.inf
         for player in self.players.values():
@@ -292,23 +292,23 @@ class Bot:
                     # This player is available to be checked, and was checked before the current best,
                     # so it is a better candidate
                     logger.debug(
-                        f'Player {self.riot_api.get_player_name(player.id)} is a better candidate')
+                        f'Player {await self.riot_api.get_player_name(player.id)} is a better candidate')
                     last_informed = start_time
                     player_to_check = player
                 else:
                     # This player is available to check, but has been checked more recently than others,
                     # so for the moment do not check it
                     logger.debug(
-                        f'Rejecting player {self.riot_api.get_player_name(player.id)} as it has been checked more recently')
+                        f'Rejecting player {await self.riot_api.get_player_name(player.id)} as it has been checked more recently')
             else:
                 logger.debug(
-                    f'Timeout still not reached for player {self.riot_api.get_player_name(player.id)}')
+                    f'Timeout still not reached for player {await self.riot_api.get_player_name(player.id)}')
         # Here we in principle have selected the best option to check
         if player_to_check == None:
             logger.debug('Not checking any player during this iteration')
             return None
         else:
             logger.debug(
-                f'Selecting player {self.riot_api.get_player_name(player_to_check.id)} to be checked')
+                f'Selecting player {await self.riot_api.get_player_name(player_to_check.id)} to be checked')
             player_to_check.stopwatch.start()
             return player_to_check.id
