@@ -1,0 +1,21 @@
+{
+    "log_filename": "chanclol.log",
+    "database_filename": "chanclol.db",
+    "log_level": "INFO",
+    "restrictions": [
+        {
+            "num_requests": 20,
+            "interval_seconds": 1
+        },
+        {
+            "num_requests": 100,
+            "interval_seconds": 120
+        }
+    ],
+    "main_loop_cycle_secs": 5,
+    "offline_threshold_mins": 30,
+    "timeout_online_secs": 15,
+    "timeout_offline_secs": 60,
+    "timeout_purge_names_hrs": 6,
+    "timeout_check_patch_version_hrs": 24
+}

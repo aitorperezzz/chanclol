@@ -66,7 +66,7 @@ class Response:
 
 
 class RiotApi:
-    def __init__(self, api_key):
+    def __init__(self, api_key, config):
         # Riot schema
         self.riot_schema = 'https://euw1.api.riotgames.com'
         # Variable that will hold the API key
@@ -87,12 +87,11 @@ class RiotApi:
         # Dictionary of encrypted summoner ids as keys, and player names as values
         self.names = {}
         # Create a rate limiter that will give permissions to make requests to riot API
-        # 100 requests in 2 minutes
-        restriction1 = rate_limiter.Restriction(100, 2 * 60 * 1000)
-        # 20 requests per second
-        restriction2 = rate_limiter.Restriction(20, 1 * 1000)
-        self.rate_limiter = rate_limiter.RateLimiter(
-            [restriction1, restriction2])
+        restrictions = []
+        for restriction in config['restrictions']:
+            restrictions.append(rate_limiter.Restriction(
+                restriction['num_requests'], restriction['interval_seconds'] * 1000))
+        self.rate_limiter = rate_limiter.RateLimiter(restrictions)
         # Riot API will have a database (it will be set by the bot)
         self.database = None
         # Cache for active games
@@ -481,3 +480,7 @@ class RiotApi:
         async with aiohttp.ClientSession() as session:
             async with session.get(url, headers=header) as r:
                 return await self.create_response(r)
+
+    async def check_patch_version(self):
+        # TODO
+        pass

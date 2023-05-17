@@ -5,12 +5,20 @@ import bot
 from dotenv import load_dotenv
 import logging
 from logging.handlers import RotatingFileHandler
+import json
+
+# Read the configuration
+config = None
+with open('config.json') as config_file:
+    config = json.load(config_file)
 
 # Set up logging for the complete application with a rotating log
 handler = RotatingFileHandler(
-    filename='chanclol.log', mode='w', maxBytes=100 * 1024 * 1024, backupCount=10)
+    filename=config['log_filename'], mode='w', maxBytes=100 * 1024 * 1024, backupCount=10)
 discord.utils.setup_logging(handler=handler)
-logging.getLogger().setLevel(logging.INFO)
+# TODO: support the rest of log levels
+logging.getLogger().setLevel(
+    logging.INFO if config['log_level'] == 'INFO' else logging.DEBUG)
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +42,7 @@ client = discord.Client(intents=intents, activity=activity)
 
 
 # Create the bot
-chanclol_bot = bot.Bot(client, riot_api_key)
+chanclol_bot = bot.Bot(client, riot_api_key, config)
 
 
 @client.event

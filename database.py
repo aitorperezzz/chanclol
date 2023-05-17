@@ -8,8 +8,8 @@ logger = logging.getLogger(__name__)
 
 class Database:
     # Database class, used to access all the data inside the database
-    def __init__(self):
-        self.filename = 'chanclol.db'
+    def __init__(self, filename):
+        self.filename = filename
         self.initialize()
 
     # Initializes the database

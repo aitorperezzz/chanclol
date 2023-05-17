@@ -1,13 +1,14 @@
-import riotapi
+from riotapi import RiotApi
 import asyncio
 import parsing
 import discord
 import message_formatter
-import database
+from database import Database
 import logging
 import time
 import math
-import stopwatch
+from stopwatch import StopWatch
+from timed_executor import TimedExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +21,7 @@ class Player:
         self.id = id
         # Create a stopwatch that will keep track of the last time the in game status was checked
         # for this player
-        self.stopwatch = stopwatch.StopWatch()
+        self.stopwatch = StopWatch()
         # Last time the player was seen online
         self.last_online_secs = -math.inf
 
@@ -61,29 +62,33 @@ class Bot:
     # and processes them. It runs an infinite loop that checks the
     # in-game status of all the players registered for each guild
 
-    def __init__(self, client, riot_api_key):
+    def __init__(self, client, riot_api_key, config):
         # Riot API class
-        self.riot_api = riotapi.RiotApi(riot_api_key)
+        self.riot_api = RiotApi(riot_api_key, config)
         # Keep a copy of the client
         self.client = client
         # Create the database
-        self.database = database.Database()
+        self.database = Database(config['database_filename'])
         # Initialise the riot API with possible contents inside the database
         self.riot_api.set_database(self.database)
         # Initialise the guilds and the players from the database, if present
         self.guilds = self.database.get_guilds()
         self.players = self.database.get_players()
-        # The bot will keep track of the last time player names were purged
-        # in the database and the riot API
-        self.last_purge_player_names = time.time()
-        self.timeout_purge_player_names = 3
+        # The bot will execute a function to purge player names, after a configurable time
+        self.purge_names_executor = TimedExecutor(
+            config['timeout_purge_names_hrs'] * 60*60*1000, self.purge_names)
+        # The bot will check the version of the riot API from time to time
+        self.check_patch_version_executor = TimedExecutor(
+            config['timeout_check_patch_version_hrs'] * 60*60*1000, self.check_patch_version)
         # Timeouts for online and offline players
-        self.offline_threshold_mins = 30
-        self.timeout_online_secs = 15
-        self.timeout_offline_secs = 60
-        # Set default timeouts for all players
+        self.offline_threshold_mins = config['offline_threshold_mins']
+        self.timeout_online_secs = config['timeout_online_secs']
+        self.timeout_offline_secs = config['timeout_offline_secs']
+        # Set default offline timeouts for all players
         for player in self.players.values():
             player.stopwatch.set_timeout(self.timeout_offline_secs * 1000)
+        # Main loop cycle
+        self.main_loop_cycle_secs = config['main_loop_cycle_secs']
 
     # Main entry point for all messages
     async def receive(self, message):
@@ -245,9 +250,11 @@ class Bot:
     async def loop_check_games(self):
         while True:
             # TODO: investigate if this wait time needs to be updated according to the number of users registered
-            await asyncio.sleep(5)
+            await asyncio.sleep(self.main_loop_cycle_secs)
             # Decide if the player names need to be purged
-            await self.purge_player_names()
+            await self.purge_names_executor.execute()
+            # Decide if the patch version needs to be updated
+            await self.check_patch_version_executor.execute()
             # Find a player to check in this iteration
             player_id = await self.select_player_to_check()
             if player_id == None:
@@ -305,18 +312,18 @@ class Bot:
         else:
             await channel.send(content=message.content, embed=message.embed)
 
-    # Decide if the purge of player names in the database and riot API has reached the configured timeout.
-    # If so, do the corresponding job
-    async def purge_player_names(self):
-        current_time = time.time()
-        if current_time - self.last_purge_player_names < self.timeout_purge_player_names * 3600:
-            return
+    # Purge names in the riot API and in the database
+    async def purge_names(self):
+        logger.info('Purging player names')
         # Create the list of player ids we want to keep
         player_ids_to_keep = self.players.keys()
         # Perform the purge in the riot API and in the database
-        logger.info('Purging player names')
         await self.riot_api.purge_names(player_ids_to_keep)
-        self.last_purge_player_names = current_time
+
+    # Calls riot API to update the patch version
+    async def check_patch_version(self):
+        logger.info('Checking patch version')
+        await self.riot_api.check_patch_version()
 
     # Select the best player to check the in game status in this iteration
     async def select_player_to_check(self):
