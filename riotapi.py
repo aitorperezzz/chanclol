@@ -1,4 +1,4 @@
-import requests
+import aiohttp
 import time
 import rate_limiter
 import logging
@@ -60,26 +60,9 @@ class MasteryInfo:
 
 class Response:
     # Low level response returned by the Riot API
-    def __init__(self, response):
-        # I always expect to return an instance of the class
-        self.status_code = None
+    def __init__(self):
+        self.status = None
         self.data = None
-        if response == None:
-            return
-        # Update status code in case it is available
-        self.status_code = response.status_code
-        if self.status_code == 200:
-            self.data = response.json()
-        elif self.status_code == 429:
-            logger.warning('Received 429: Riot is rate limiting requests')
-        elif self.status_code == 404:
-            logger.debug('Received 404: data not found')
-        elif self.status_code == 403:
-            logger.error(
-                'Received 403: forbidden. Probably API key is not valid')
-        else:
-            logger.error(
-                f'Unknown error connecting to Riot API: {response.json()}')
 
 
 class RiotApi:
@@ -129,7 +112,7 @@ class RiotApi:
 
         # Make the request to the server
         response = await self._get(url, header)
-        if response.status_code != 200:
+        if response.status != 200:
             logger.error('Could not make a request to the Riot league API')
             return None
 
@@ -149,11 +132,11 @@ class RiotApi:
 
         # Make the request and check everything is OK
         response = await self._get(url, header)
-        if response.status_code == 404:
+        if response.status == 404:
             logger.info(
                 f'Mastery was not found for this player {await self.get_player_name(player_id)} and champion {champion_id} combination')
             return MasteryInfo(None)
-        elif response.status_code != 200:
+        elif response.status != 200:
             logger.error(
                 f'Error retrieving mastery for player {await self.get_player_name(player_id)}')
             return None
@@ -173,14 +156,14 @@ class RiotApi:
         # Make the request and check everything is OK
         response = await self._get(url, header)
         player_name = await self.get_player_name(player_id)
-        if response.status_code == 404:
+        if response.status == 404:
             logger.debug(f'Player {player_name} is not in game')
             self.trim_active_game_cache(player_id)
             return await self.create_in_game_info(None)
-        elif response.status_code == 429:
+        elif response.status == 429:
             logger.warning('Rate limited')
             return None
-        elif response.status_code != 200:
+        elif response.status != 200:
             logger.warning(
                 'Could not make a request to the Riot active game API')
             return None
@@ -304,7 +287,7 @@ class RiotApi:
 
         # Make the request and check everything is OK
         response = await self._get(url, {})
-        if response.status_code != 200:
+        if response.status != 200:
             logger.error('Could not make request to Riot champions API')
             return None
 
@@ -320,7 +303,7 @@ class RiotApi:
 
         # Make the request and check everything is OK
         response = await self._get(url, {})
-        if response.status_code != 200:
+        if response.status != 200:
             logger.error('Could not make request to Riot spells API')
             return None
 
@@ -376,7 +359,7 @@ class RiotApi:
 
         # Make the request to the server and check the response
         response = await self._get(url, header=header)
-        if response.status_code != 200:
+        if response.status != 200:
             logger.error('Could not make request to the Riot summoner API')
             return None
 
@@ -422,7 +405,7 @@ class RiotApi:
 
         # Make the request to the server and check the response
         response = await self._get(url, header=header)
-        if response.status_code != 200:
+        if response.status != 200:
             logger.error('Could not make request to the Riot summoner API')
             return None
 
@@ -460,6 +443,29 @@ class RiotApi:
             return None
         return {'X-Riot-Token': self.api_key}
 
+    # Creates an internal response with the aiohttp response, logging in the
+    # process the relevant status codes for this application
+    async def create_response(self, response):
+        result = Response()
+        if response == None:
+            return result
+
+        # Update status code in case it is available
+        result.status = response.status
+        if result.status == 200:
+            result.data = await response.json()
+        elif result.status == 429:
+            logger.warning('Received 429: Riot is rate limiting requests')
+        elif result.status == 404:
+            logger.debug('Received 404: data not found')
+        elif result.status == 403:
+            logger.error(
+                'Received 403: forbidden. Probably API key is not valid')
+        else:
+            logger.error(
+                f'Unknown error connecting to Riot API: {await response.json()}')
+        return result
+
     # Makes a simple request using the requests module.
     async def _get(self, url, header):
 
@@ -468,8 +474,10 @@ class RiotApi:
         allowed = await self.rate_limiter.allowed(vital)
         if not allowed:
             logger.warning('Rate limiter is not allowing the request')
-            return Response(None)
-        logger.debug(f'Making a request to url {url}')
+            return await self.create_response(None)
 
-        # Make the request and check the connection was good
-        return Response(requests.get(url, headers=header))
+        # Make the request and check the response status
+        logger.debug(f'Making a request to url {url}')
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=header) as r:
+                return await self.create_response(r)
