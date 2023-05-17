@@ -20,7 +20,27 @@ class Player:
         self.id = id
         # Create a stopwatch that will keep track of the last time the in game status was checked
         # for this player
-        self.stopwatch = stopwatch.StopWatch(15 * 1000)  # Milliseconds
+        self.stopwatch = stopwatch.StopWatch()
+        # Last time the player was seen online
+        self.last_online_secs = -math.inf
+
+    # Updates the internal stopwatch of the player according to the online status and the time elapsed
+    # Return True if the timeout has actually been changed, False if not
+    def update_check_timeout(self, online, offline_threshold_mins, timeout_online_secs, timeout_offline_secs):
+        current_time = time.time()
+        # If the player is currently online, set the timeout to online
+        if online:
+            self.last_online_secs = current_time
+            if self.stopwatch.get_timeout() != timeout_online_secs * 1000:
+                self.stopwatch.set_timeout(timeout_online_secs * 1000)
+                return True
+        # If not online, we need to know how long the player has been offline
+        else:
+            if current_time - self.last_online_secs > offline_threshold_mins * 60:
+                if self.stopwatch.get_timeout() != timeout_offline_secs * 1000:
+                    self.stopwatch.set_timeout(timeout_offline_secs * 1000)
+                    return True
+        return False
 
 
 class Guild:
@@ -57,6 +77,13 @@ class Bot:
         # in the database and the riot API
         self.last_purge_player_names = time.time()
         self.timeout_purge_player_names = 3
+        # Timeouts for online and offline players
+        self.offline_threshold_mins = 30
+        self.timeout_online_secs = 15
+        self.timeout_offline_secs = 60
+        # Set default timeouts for all players
+        for player in self.players.values():
+            player.stopwatch.set_timeout(self.timeout_offline_secs * 1000)
 
     # Main entry point for all messages
     async def receive(self, message):
@@ -137,6 +164,8 @@ class Bot:
         # Add it to the list of players if necessary
         if not player_id in self.players:
             self.players[player_id] = Player(player_id)
+            self.players[player_id].stopwatch.set_timeout(
+                self.timeout_offline_secs * 1000)
         # Add to the guild
         guild.last_informed_game_ids[player_id] = None
         # Add to the database
@@ -235,9 +264,15 @@ class Bot:
             elif not active_game_info.in_game:
                 logger.debug(
                     f'Player {player_name} is currently not in game')
-                # TODO: check if the timeout for this player needs to be updated
+                # Player is offline, update the timeout if needed
+                if self.players[player_id].update_check_timeout(
+                        False, self.offline_threshold_mins, self.timeout_online_secs, self.timeout_offline_secs):
+                    logger.info(f'Player {player_name} is now offline')
                 continue
-            # Player is in game
+            # Player is online, update the timeout if needed
+            if self.players[player_id].update_check_timeout(
+                    True, self.offline_threshold_mins, self.timeout_online_secs, self.timeout_offline_secs):
+                logger.info(f'Player {player_name} is now online')
             # Get the guilds where this player is registered
             guild_ids_player = self.get_guild_ids(player_id)
             for guild_id in guild_ids_player:
@@ -286,22 +321,21 @@ class Bot:
     # Select the best player to check the in game status in this iteration
     async def select_player_to_check(self):
         player_to_check = None
-        last_informed = math.inf
+        best_time_behind = -math.inf
         for player in self.players.values():
-            if player.stopwatch.timeout_reached():
-                start_time = player.stopwatch.get_start_time()
-                if start_time < last_informed:
-                    # This player is available to be checked, and was checked before the current best,
-                    # so it is a better candidate
+            time_behind = player.stopwatch.time_behind()
+            if time_behind > 0:
+                if time_behind > best_time_behind:
+                    # This player is available to be checked, and is more behind than the best,
+                    # so it is the new best
                     logger.debug(
-                        f'Player {await self.riot_api.get_player_name(player.id)} is a better candidate')
-                    last_informed = start_time
+                        f'Player {await self.riot_api.get_player_name(player.id)} is more behind')
+                    best_time_behind = time_behind
                     player_to_check = player
                 else:
-                    # This player is available to check, but has been checked more recently than others,
-                    # so for the moment do not check it
+                    # This player is available to check, but is less behind than the current best
                     logger.debug(
-                        f'Rejecting player {await self.riot_api.get_player_name(player.id)} as it has been checked more recently')
+                        f'Rejecting player {await self.riot_api.get_player_name(player.id)} as it is less behind')
             else:
                 logger.debug(
                     f'Timeout still not reached for player {await self.riot_api.get_player_name(player.id)}')
