@@ -9,6 +9,7 @@ class StopWatch:
     def __init__(self):
         self.timeout = None
         self.start_time = -math.inf
+        self.is_running = False
 
     # Get the current timeout in milliseconds
     def get_timeout(self):
@@ -20,7 +21,16 @@ class StopWatch:
 
     # Start counting time, meaning start time is updated to now
     def start(self):
+        self.is_running = True
         self.start_time = math.floor(time.time() * 1000)
+
+    # Set the stopwatch to not running
+    def stop(self):
+        self.is_running = False
+
+    # Know if the stopwatch is currently active
+    def get_is_running(self):
+        return self.is_running
 
     # Return the current start time
     def get_start_time(self):

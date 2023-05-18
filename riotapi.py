@@ -127,7 +127,7 @@ class RiotApi:
             return MasteryInfo(None)
         elif response.status != 200:
             logger.error(
-                f'Error retrieving mastery for player {await self.get_player_name(player_id)}')
+                f'Error retrieving mastery for player with id {player_id}')
             return None
         else:
             return MasteryInfo(response.data)
@@ -163,8 +163,9 @@ class RiotApi:
             logger.info(
                 f'Player {player_name} is in a game not found in the cache')
             active_game = await self.create_in_game_info(response.data)
-            # Finally add the game to the cache
-            self.active_game_cache[game_id] = active_game
+            # Finally add the game to the cache if it's valid
+            if active_game:
+                self.active_game_cache[game_id] = active_game
             return active_game
 
     # The provided player has stopped playing, so remove the associated game id
@@ -216,10 +217,15 @@ class RiotApi:
         in_game_info.teams.append([])
         in_game_info.teams.append([])
         for participant in response['participants']:
+            participant_created = await self.create_participant(participant)
+            if not participant_created:
+                logger.error(
+                    f'Could not create participant while preparing in game info')
+                return None
             if participant['teamId'] == team_ids[0]:
-                in_game_info.teams[0].append(await self.create_participant(participant))
+                in_game_info.teams[0].append(participant_created)
             elif participant['teamId'] == team_ids[1]:
-                in_game_info.teams[1].append(await self.create_participant(participant))
+                in_game_info.teams[1].append(participant_created)
             else:
                 logger.error('Participant does not belong to any team')
                 return None
@@ -399,7 +405,8 @@ class RiotApi:
         for id in self.names:
             name = await self.request_player_name(id)
             if name == None:
-                logger.error(f'Name of player {id} was not found')
+                logger.error(
+                    f'Name of player {id} was not found. Keeping old name')
                 continue
             self.names[id] = name
         # Now that the final dictionary is built, call the database to also perform the purge
@@ -426,11 +433,13 @@ class RiotApi:
             result.data = await response.json()
         elif result.status == 429:
             logger.warning('Received 429: Riot is rate limiting requests')
+            self.rate_limiter.received_rate_limit()
         elif result.status == 404:
             logger.debug('Received 404: data not found')
         elif result.status == 403:
-            logger.error(
-                'Received 403: forbidden. Probably API key is not valid')
+            message = 'Received 403: forbidden. Probably API key is not valid'
+            logger.error(message)
+            raise ValueError(message)
         else:
             logger.error(
                 f'Unknown error connecting to Riot API: {await response.json()}')
@@ -440,7 +449,7 @@ class RiotApi:
     async def _get(self, url):
 
         # Wait until the request can be made
-        vital = not self.route_active_games in url
+        vital = not self.route_active_games.format(player_id='') in url
         allowed = await self.rate_limiter.allowed(vital)
         if not allowed:
             logger.warning('Rate limiter is not allowing the request')
