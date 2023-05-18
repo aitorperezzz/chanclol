@@ -16,9 +16,8 @@ with open('config.json') as config_file:
 handler = RotatingFileHandler(
     filename=config['log_filename'], mode='w', maxBytes=100 * 1024 * 1024, backupCount=10)
 discord.utils.setup_logging(handler=handler)
-# TODO: support the rest of log levels
-logging.getLogger().setLevel(
-    logging.INFO if config['log_level'] == 'INFO' else logging.DEBUG)
+level = logging.getLevelName(config['log_level'])
+logging.getLogger().setLevel(level)
 
 logger = logging.getLogger(__name__)
 
