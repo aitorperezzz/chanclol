@@ -53,8 +53,8 @@ class Database:
                 'version' VARCHAR(256) DEFAULT '',
                 PRIMARY KEY ('version'));"""
             self.execute_query(query)
-            query = 'INSERT INTO version (version) VALUES ('');'
-            self.execute_query(query)
+            query = 'INSERT INTO version (version) VALUES (?);'
+            self.execute_query(query, ('',))
         else:
             logger.info('Database already present')
         return True
