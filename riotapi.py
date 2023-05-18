@@ -69,6 +69,10 @@ class RiotApi:
     def __init__(self, api_key, config):
         # Riot schema
         self.riot_schema = 'https://euw1.api.riotgames.com'
+        # Urls that help decide the version of the data dragon files to download
+        self.versions_json = 'https://ddragon.leagueoflegends.com/api/versions.json'
+        self.realm = 'https://ddragon.leagueoflegends.com/realms/euw.json'
+        self.version = ''
         # Variable that will hold the API key
         self.api_key = api_key
         # Routes inside the riot API
@@ -79,11 +83,11 @@ class RiotApi:
         self.route_mastery_by_champ = '/by-champion/'
         self.route_active_games = '/lol/spectator/v4/active-games/by-summoner/'
         # Dragon route to fetch info about the champions
-        self.route_champions = 'http://ddragon.leagueoflegends.com/cdn/13.9.1/data/en_US/champion.json'
-        self.data_champions = None
+        self.route_champions = 'http://ddragon.leagueoflegends.com/cdn/{version}/data/en_US/champion.json'
+        self.data_champions = {}
         # Dragon route to fetch info about spells
-        self.route_spells = 'http://ddragon.leagueoflegends.com/cdn/13.9.1/data/en_US/summoner.json'
-        self.data_spells = None
+        self.route_spells = 'http://ddragon.leagueoflegends.com/cdn/{version}/data/en_US/summoner.json'
+        self.data_spells = {}
         # Dictionary of encrypted summoner ids as keys, and player names as values
         self.names = {}
         # Create a rate limiter that will give permissions to make requests to riot API
@@ -282,7 +286,7 @@ class RiotApi:
     # Creates the internal data for champions
     async def request_champion_data(self):
         # Build the request
-        url = self.route_champions
+        url = self.route_champions.format(version=self.version)
 
         # Make the request and check everything is OK
         response = await self._get(url, {})
@@ -298,7 +302,7 @@ class RiotApi:
     # Creates the internal data for spells
     async def request_spell_data(self):
         # Build the request
-        url = self.route_spells
+        url = self.route_spells.format(version=self.version)
 
         # Make the request and check everything is OK
         response = await self._get(url, {})
@@ -340,6 +344,7 @@ class RiotApi:
         self.data_champions = self.database.get_champions()
         self.data_spells = self.database.get_spells()
         self.names = self.database.get_names()
+        self.version = self.database.get_version()
 
     # Returns the player id of the provided player name
     async def get_player_id(self, player_name):
@@ -481,6 +486,51 @@ class RiotApi:
             async with session.get(url, headers=header) as r:
                 return await self.create_response(r)
 
+    # Fetches the latest version of the data dragon available, and checks the version
+    # is up in EUW. If the internal data is on an old version, force redownload
     async def check_patch_version(self):
-        # TODO
-        pass
+
+        # Check the versions.json file for the latest version
+        url = self.versions_json
+        versions = await self._get(url, {})
+        if versions.status != 200:
+            logger.error('Could not make request to Riot versions API')
+            return
+        latest_version = versions.data[0]
+        logger.info(f'Latest patch available in dd is {latest_version}')
+
+        # Check if EUW is already on that patch
+        url = self.realm
+        response = await self._get(url, {})
+        if response.status != 200:
+            logger.error('Could not make request to Riot realm API')
+            return
+        realm_version = response.data['dd']
+        logger.info(f'Realm patch for EUW is {realm_version}')
+
+        # Select the correct version. It should be the one indicated by the realm, but it should also exist
+        # in versions.json
+        new_version = None
+        for version in versions.data:
+            if version == realm_version:
+                new_version = version
+                break
+        if new_version == None:
+            raise ValueError(
+                f'The realm version {realm_version} has not been found in versions.json')
+        elif new_version == latest_version:
+            logger.info(f'Realm is on the latest version {latest_version}')
+        else:
+            logger.warning(
+                f'Realm is on version {realm_version} while the latest version is {latest_version}')
+
+        # If we need to update the internal version, force an update of the internal data
+        if self.version != new_version:
+            logger.info(
+                f'Internal version ({self.version}) is not in line with {new_version}')
+            self.version = new_version
+            self.database.set_version(self.version)
+            self.data_champions.clear()
+            self.data_spells.clear()
+        else:
+            logger.info(f'Internal version is in line with {new_version}')

@@ -48,6 +48,11 @@ class Database:
                 'name' VARCHAR(256) NOT NULL DEFAULT '',
                 PRIMARY KEY ('id'));"""
             self.execute_query(query)
+            logger.info('Creating table version')
+            query = """CREATE TABLE version (
+                'version' VARCHAR(256) DEFAULT '',
+                PRIMARY KEY ('version'));"""
+            self.execute_query(query)
         else:
             logger.info('Database already present')
         return True
@@ -274,3 +279,17 @@ class Database:
         for id in names_to_keep:
             query = 'UPDATE names SET name=? WHERE id=?;'
             self.execute_query(query, (names_to_keep[id], id))
+
+    # Get the current version of the patch
+    def get_version(self):
+        query = 'SELECT * FROM version;'
+        result = self.execute_query(query)
+        if len(result) != 1:
+            raise ValueError(
+                'Table version in the database needs to contain one and only one value')
+        return result[0][0]
+
+    # Update the value of the patch version
+    def set_version(self, version):
+        query = 'UPDATE version SET version=?;'
+        self.execute_query(query, (version,))
