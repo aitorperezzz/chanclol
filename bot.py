@@ -264,11 +264,14 @@ class Bot:
             logger.debug(f'Checking in game status of player {player_name}')
             # Make a request to Riot to check if the player is in game
             active_game_info = await self.riot_api.get_active_game_info(player_id)
-            if active_game_info == None:
+            if not active_game_info:
                 logger.warning(
                     f'In-game data for player {player_name} is not available')
                 continue
-            elif not active_game_info.in_game:
+            # At this point the request has been made in some form, so reset the stopwatch
+            self.players[player_id].stopwatch.start()
+            # Now check in game status
+            if not active_game_info.in_game:
                 logger.debug(
                     f'Player {player_name} is currently not in game')
                 # Player is offline, update the timeout if needed
@@ -353,5 +356,4 @@ class Bot:
         else:
             logger.debug(
                 f'Selecting player {await self.riot_api.get_player_name(player_to_check.id)} to be checked')
-            player_to_check.stopwatch.start()
             return player_to_check.id
