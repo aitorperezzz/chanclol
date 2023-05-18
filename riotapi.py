@@ -76,12 +76,11 @@ class RiotApi:
         # Variable that will hold the API key
         self.api_key = api_key
         # Routes inside the riot API
-        self.route_summoner_by_name = '/lol/summoner/v4/summoners/by-name/'
-        self.route_summoner = '/lol/summoner/v4/summoners/'
-        self.route_league = '/lol/league/v4/entries/by-summoner/'
-        self.route_mastery = '/lol/champion-mastery/v4/champion-masteries/by-summoner/'
-        self.route_mastery_by_champ = '/by-champion/'
-        self.route_active_games = '/lol/spectator/v4/active-games/by-summoner/'
+        self.route_summoner_by_name = '/lol/summoner/v4/summoners/by-name/{player_name}'
+        self.route_summoner = '/lol/summoner/v4/summoners/{player_id}'
+        self.route_league = '/lol/league/v4/entries/by-summoner/{player_id}'
+        self.route_mastery = '/lol/champion-mastery/v4/champion-masteries/by-summoner/{player_id}/by-champion/{champion_id}'
+        self.route_active_games = '/lol/spectator/v4/active-games/by-summoner/{player_id}'
         # Dragon route to fetch info about the champions
         self.route_champions = 'http://ddragon.leagueoflegends.com/cdn/{version}/data/en_US/champion.json'
         self.data_champions = {}
@@ -106,15 +105,8 @@ class RiotApi:
     # the player has been placed. If the list is empty, the player is not placed.
     async def get_league_info(self, player_id):
 
-        # Build the request
-        url = self.riot_schema + self.route_league + player_id
-        header = self.build_api_header()
-        if header == None:
-            logger.error('Could not build the header for the request')
-            return None
-
-        # Make the request to the server
-        response = await self._get(url, header)
+        url = self.riot_schema + self.route_league.format(player_id=player_id)
+        response = await self._get(url)
         if response.status != 200:
             logger.error('Could not make a request to the Riot league API')
             return None
@@ -125,16 +117,10 @@ class RiotApi:
     # Returns the mastery of certain player with certain champion
     async def get_mastery_info(self, player_id, champion_id):
 
-        # Build the request
-        url = self.riot_schema + self.route_mastery + player_id
-        url += self.route_mastery_by_champ + str(champion_id)
-        header = self.build_api_header()
-        if header == None:
-            logger.error('Could not build the header for the request')
-            return None
-
-        # Make the request and check everything is OK
-        response = await self._get(url, header)
+        url = self.riot_schema + \
+            self.route_mastery.format(
+                player_id=player_id, champion_id=champion_id)
+        response = await self._get(url)
         if response.status == 404:
             logger.info(
                 f'Mastery was not found for this player {await self.get_player_name(player_id)} and champion {champion_id} combination')
@@ -149,15 +135,9 @@ class RiotApi:
     # Returns information about ongoing games
     async def get_active_game_info(self, player_id):
 
-        # Build the request
-        url = self.riot_schema + self.route_active_games + player_id
-        header = self.build_api_header()
-        if header == None:
-            logger.error('Could not build the header for the request')
-            return None
-
-        # Make the request and check everything is OK
-        response = await self._get(url, header)
+        url = self.riot_schema + \
+            self.route_active_games.format(player_id=player_id)
+        response = await self._get(url)
         player_name = await self.get_player_name(player_id)
         if response.status == 404:
             logger.debug(f'Player {player_name} is not in game')
@@ -285,11 +265,9 @@ class RiotApi:
 
     # Creates the internal data for champions
     async def request_champion_data(self):
-        # Build the request
-        url = self.route_champions.format(version=self.version)
 
-        # Make the request and check everything is OK
-        response = await self._get(url, {})
+        url = self.route_champions.format(version=self.version)
+        response = await self._get(url)
         if response.status != 200:
             logger.error('Could not make request to Riot champions API')
             return None
@@ -301,11 +279,9 @@ class RiotApi:
 
     # Creates the internal data for spells
     async def request_spell_data(self):
-        # Build the request
-        url = self.route_spells.format(version=self.version)
 
-        # Make the request and check everything is OK
-        response = await self._get(url, {})
+        url = self.route_spells.format(version=self.version)
+        response = await self._get(url)
         if response.status != 200:
             logger.error('Could not make request to Riot spells API')
             return None
@@ -354,15 +330,10 @@ class RiotApi:
             if self.names[player_id] == player_name:
                 return player_id
 
-        # Build the request
-        url = self.riot_schema + self.route_summoner_by_name + player_name
-        header = self.build_api_header()
-        if header == None:
-            logger.error('Could not build the request header')
-            return None
-
-        # Make the request to the server and check the response
-        response = await self._get(url, header=header)
+        # Make a request if not
+        url = self.riot_schema + \
+            self.route_summoner_by_name.format(player_name=player_name)
+        response = await self._get(url)
         if response.status != 200:
             logger.error('Could not make request to the Riot summoner API')
             return None
@@ -400,15 +371,10 @@ class RiotApi:
 
     # Specifically makes a request to get the current player name
     async def request_player_name(self, player_id):
-        # Build the request
-        url = self.riot_schema + self.route_summoner + player_id
-        header = self.build_api_header()
-        if header == None:
-            logger.error('Could not build the request header')
-            return None
 
-        # Make the request to the server and check the response
-        response = await self._get(url, header=header)
+        url = self.riot_schema + \
+            self.route_summoner.format(player_id=player_id)
+        response = await self._get(url)
         if response.status != 200:
             logger.error('Could not make request to the Riot summoner API')
             return None
@@ -471,7 +437,7 @@ class RiotApi:
         return result
 
     # Makes a simple request using the requests module.
-    async def _get(self, url, header):
+    async def _get(self, url):
 
         # Wait until the request can be made
         vital = not self.route_active_games in url
@@ -483,7 +449,7 @@ class RiotApi:
         # Make the request and check the response status
         logger.debug(f'Making a request to url {url}')
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=header) as r:
+            async with session.get(url, headers=self.build_api_header()) as r:
                 return await self.create_response(r)
 
     # Fetches the latest version of the data dragon available, and checks the version
@@ -492,7 +458,7 @@ class RiotApi:
 
         # Check the versions.json file for the latest version
         url = self.versions_json
-        versions = await self._get(url, {})
+        versions = await self._get(url)
         if versions.status != 200:
             logger.error('Could not make request to Riot versions API')
             return
@@ -501,7 +467,7 @@ class RiotApi:
 
         # Check if EUW is already on that patch
         url = self.realm
-        response = await self._get(url, {})
+        response = await self._get(url)
         if response.status != 200:
             logger.error('Could not make request to Riot realm API')
             return
