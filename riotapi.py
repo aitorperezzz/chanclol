@@ -39,7 +39,7 @@ class InGameInfo:
         self.in_game = None
         self.game_id = None
         self.game_length_minutes = None
-        self.teams = []
+        self.teams = {}
 
 
 class MasteryInfo:
@@ -181,7 +181,7 @@ class RiotApi:
     # Gets the game id that corresponds to the provided player, if any
     def get_game_id_for_player(self, player_id):
         for active_game in self.active_game_cache.values():
-            for team in active_game.teams:
+            for team in active_game.teams.values():
                 for participant in team:
                     if participant.player_id == player_id:
                         return active_game.game_id
@@ -207,28 +207,20 @@ class RiotApi:
         in_game_info.game_id = response['gameId']
         in_game_info.game_length_minutes = round(
             response['gameLength'] / 60)
-        # Assign team ids, there should be only two possible values
+        # Create the list of all the provided team ids
         team_ids = list(set([participant['teamId']
                         for participant in response['participants']]))
-        if len(team_ids) != 2:
-            logger.error('Riot has not provided exactly two team ids')
-            return None
-        # Fill in both of the teams
-        in_game_info.teams.append([])
-        in_game_info.teams.append([])
-        for participant in response['participants']:
-            participant_created = await self.create_participant(participant)
-            if not participant_created:
-                logger.error(
-                    f'Could not create participant while preparing in game info')
-                return None
-            if participant['teamId'] == team_ids[0]:
-                in_game_info.teams[0].append(participant_created)
-            elif participant['teamId'] == team_ids[1]:
-                in_game_info.teams[1].append(participant_created)
-            else:
-                logger.error('Participant does not belong to any team')
-                return None
+        # Fill in the teams
+        for team_id in team_ids:
+            in_game_info.teams[team_id] = []
+            for participant in response['participants']:
+                if participant['teamId'] == team_id:
+                    participant_created = await self.create_participant(participant)
+                    if not participant_created:
+                        logger.error(
+                            f'Could not create participant while preparing in game info')
+                        return None
+                    in_game_info.teams[team_id].append(participant_created)
         return in_game_info
 
     # Creates a participant from the in game participant data. This function

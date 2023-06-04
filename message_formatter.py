@@ -115,25 +115,26 @@ def in_game_message(player_id, player_name, active_game_info):
         color=color
     )
     # Get the team the player belongs to. This will be the first team to appear in the message
-    player_team_index = None
-    for index in range(len(active_game_info.teams)):
-        for participant in active_game_info.teams[index]:
+    player_team_id = None
+    for team_id in active_game_info.teams:
+        for participant in active_game_info.teams[team_id]:
             if participant.player_id == player_id:
-                player_team_index = index
+                player_team_id = team_id
                 break
         else:
             continue
         break
-    if player_team_index == None:
+    if player_team_id == None:
         logger.error(
             f'Player {player_name} has not been found among the game participants')
         return None
-    # First print the team the player belongs to, then the other one
-    add_in_game_team_message(
-        active_game_info.teams[player_team_index], 0, embed)
-    other_index = 0 if player_team_index == 1 else 1
-    add_in_game_team_message(
-        active_game_info.teams[other_index], 1, embed)
+    # Create a list of team ids where the player's one is the first
+    team_ids = list(active_game_info.teams)
+    team_ids.insert(0, team_ids.pop(team_ids.index(player_team_id)))
+    # Print the teams in the order just created
+    for index in range(len(team_ids)):
+        add_in_game_team_message(
+            active_game_info.teams[team_ids[index]], index, embed)
     return Message(None, embed)
 
 
