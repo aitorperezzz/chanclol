@@ -33,7 +33,7 @@ def no_response_riot_api(player_name):
 
 def player_rank(player_name, league_info):
     if len(league_info) == 0:
-        return Message(f'Player {player_name} is not ranked', None)
+        return Message(f'Player **{player_name}** is not ranked', None)
     embed = discord.Embed(
         title=f'Current rank of player {player_name}',
         color=color
