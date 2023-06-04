@@ -31,32 +31,26 @@ def no_response_riot_api(player_name):
     return Message(f'Got no response from Riot API for player **{player_name}**', None)
 
 
-def player_registered(player_name, league_info):
-    content = f'Player **{player_name}** has been registered'
+def player_rank(player_name, league_info):
     if len(league_info) == 0:
-        return Message(content, None)
+        return Message(f'Player {player_name} is not ranked', None)
     embed = discord.Embed(
         title=f'Current rank of player {player_name}',
         color=color
     )
     for league in league_info:
-        name = f'**{league_message_name(league.queue_type)}**'
+        name = f'**{league.queue_type}**'
         value = league_message_value(league)
         embed.add_field(name=name, value=value, inline=False)
-    return Message(content, embed)
+    return Message(None, embed)
 
 
-def league_message_name(queue_type):
-    if queue_type == 'RANKED_SOLO_5x5':
-        return 'Ranked Solo'
-    elif queue_type == 'RANKED_FLEX_SR':
-        return 'Ranked Flex'
-    else:
-        raise ValueError(f'Queue type not understood: {queue_type}')
+def player_registered(player_name):
+    return Message(f'Player **{player_name}** has been registered', None)
 
 
 def league_message_value(league):
-    return f'{league.tier} {league.rank} {league.lps} LPs'
+    return f'{league.tier} {league.rank} {league.lps} LPs. WR {league.win_rate}% ({league.wins}W/{league.losses}L)'
 
 
 def player_unregistered_correctly(player_name):
@@ -149,5 +143,5 @@ def add_in_game_team_message(team, team_index, embed):
             value += f'- Mastery not available\n'
         value += f'- {participant.spell1_name}, {participant.spell2_name}\n'
         for league in participant.league_info:
-            value += f'- {league_message_name(league.queue_type)}: {league_message_value(league)}\n'
+            value += f'- {league.queue_type}: {league_message_value(league)}\n'
     embed.add_field(name=name, value=value)

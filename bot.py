@@ -128,18 +128,18 @@ class Bot:
         else:
             logger.info(f'Command understood: {message.content}')
             if parsed_input.command == parsing.Command.REGISTER:
-                response = await self.register(' '.join(parsed_input.arguments), guild)
+                responses = await self.register(' '.join(parsed_input.arguments), guild)
             elif parsed_input.command == parsing.Command.UNREGISTER:
-                response = await self.unregister(' '.join(parsed_input.arguments), guild)
+                responses = await self.unregister(' '.join(parsed_input.arguments), guild)
             elif parsed_input.command == parsing.Command.PRINT:
-                response = await self.print(guild)
+                responses = await self.print(guild)
             elif parsed_input.command == parsing.Command.CHANNEL:
-                response = await self.channel(' '.join(parsed_input.arguments), guild)
+                responses = await self.channel(' '.join(parsed_input.arguments), guild)
             elif parsed_input.command == parsing.Command.HELP:
-                response = message_formatter.create_help_message()
+                responses = message_formatter.create_help_message()
             else:
                 raise ValueError('Command is not one of the possible ones')
-            if response:
+            for response in responses:
                 await message.channel.send(content=response.content, embed=response.embed)
 
     # Register the provided player in the provided guild, if possible
@@ -150,19 +150,19 @@ class Bot:
         if player_id == None:
             logger.info(
                 f'Riot has not provided an id for player {player_name}')
-            return message_formatter.no_response_riot_api(player_name)
+            return [message_formatter.no_response_riot_api(player_name)]
 
         # Check if the player already belongs to the guild
         if player_id in guild.last_informed_game_ids:
             logger.info(f'Player {player_name} is already registered')
-            return message_formatter.player_already_registered(player_name)
+            return [message_formatter.player_already_registered(player_name)]
 
         # Get rank info for this player
         league_info = await self.riot_api.get_league_info(player_id)
         if league_info == None:
             logger.info(
                 f'Could not get rank info from Riot API for player {player_name}')
-            return message_formatter.no_response_riot_api(player_name)
+            return [message_formatter.no_response_riot_api(player_name)]
 
         # Now it's safe to register the player
         logger.info(f'Registering player {player_name}')
@@ -178,7 +178,7 @@ class Bot:
 
         # Send a final message
         logger.info(f'Player {player_name} has been registered')
-        return message_formatter.player_registered(player_name, league_info)
+        return [message_formatter.player_registered(player_name), message_formatter.player_rank(player_name, league_info)]
 
     # Unregister a player from the guild
     async def unregister(self, player_name, guild):
@@ -188,7 +188,7 @@ class Bot:
         if player_id == None:
             logger.info(
                 f'Riot has not provided an id for player {player_name}')
-            return message_formatter.no_response_riot_api(player_name)
+            return [message_formatter.no_response_riot_api(player_name)]
 
         # Check if the player was registered in the guild
         if player_id in guild.last_informed_game_ids:
@@ -203,11 +203,11 @@ class Bot:
             if len(guild_ids) == 0:
                 logger.info(f'Player {player_name} will be completely removed')
                 del self.players[player_id]
-            return message_formatter.player_unregistered_correctly(player_name)
+            return [message_formatter.player_unregistered_correctly(player_name)]
         else:
             logger.info(
                 f'Player {player_name} was not previously registered in this guild')
-            return message_formatter.player_not_previously_registered(player_name)
+            return [message_formatter.player_not_previously_registered(player_name)]
 
     # Change the channel where the in-game messages will be sent to
     async def channel(self, new_channel_name, guild):
@@ -218,14 +218,14 @@ class Bot:
         if channel == None:
             logger.info(
                 f'Cannot change channel to {new_channel_name} as it does not exist in the server')
-            return message_formatter.channel_does_not_exist(new_channel_name)
+            return [message_formatter.channel_does_not_exist(new_channel_name)]
         else:
             logger.info(
                 f'Changing channel to use by this server to {new_channel_name}')
             guild.channel_id = channel.id
             self.database.set_channel_id(guild.id, guild.channel_id)
             logger.info(f'Channel changed to {new_channel_name}')
-            return message_formatter.channel_changed(new_channel_name)
+            return [message_formatter.channel_changed(new_channel_name)]
 
     # Print the players currently registered in the provided guild
     async def print(self, guild):
@@ -236,7 +236,7 @@ class Bot:
         # Create list of player names in this guild
         names = [await self.riot_api.get_player_name(
             id) for id in guild.last_informed_game_ids]
-        return message_formatter.print_config(names, channel_name)
+        return [message_formatter.print_config(names, channel_name)]
 
     # Get a list of all the guild ids where the player is registered
     def get_guild_ids(self, player_id):

@@ -5,18 +5,29 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# These are the queues we care about, with the names we will be using
+relevant_queues = {
+    'RANKED_SOLO_5x5': 'R. Solo',
+    'RANKED_FLEX_SR': 'R. Flex'
+}
+
 
 class LeagueInfo:
     # Information returned, for a specific player and for a specific
     # queue, containing its current ranked position in that queue
 
-    def __init__(self, response):
+    def __init__(self, response, queue_type):
         if not response:
             return None
-        self.queue_type = response['queueType']
+        self.queue_type = queue_type
         self.tier = response['tier']
         self.rank = response['rank']
         self.lps = response['leaguePoints']
+        self.wins = response['wins']
+        self.losses = response['losses']
+        total_games = self.wins + self.losses
+        self.win_rate = int(self.wins / (total_games) *
+                            100) if total_games != 0 else 0
 
 
 class Participant:
@@ -253,12 +264,13 @@ class RiotApi:
         if not response:
             logger.error(f'Cannot create league info, response not available')
             return []
-        relevant_queues = ['RANKED_SOLO_5x5', 'RANKED_FLEX_SR']
         result = []
-        for league in response.data:
-            league_info = LeagueInfo(league)
-            if league_info.queue_type in relevant_queues:
-                result.append(league_info)
+        for relevant_queue in relevant_queues:
+            for league in response.data:
+                if league['queueType'] == relevant_queue:
+                    league_info = LeagueInfo(
+                        league, relevant_queues[relevant_queue])
+                    result.append(league_info)
         return result
 
     # Creates the internal data for champions
