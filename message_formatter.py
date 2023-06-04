@@ -90,9 +90,11 @@ def create_help_message():
         color=color
     )
     embed.add_field(name='`chanclol register <player_name>`',
-                    value='Register a new player', inline=False)
+                    value='Register a player to automatically receive a message when the player has just started a new game', inline=False)
     embed.add_field(name='`chanclol unregister <player_name>`',
-                    value='Unregister a player previously added', inline=False)
+                    value='Unregister a player', inline=False)
+    embed.add_field(name='`chanclol rank <player_name>`',
+                    value='Print the current rank of the provided player', inline=False)
     embed.add_field(name='`chanclol print`',
                     value='Print the players currently registered, and the channel the bot is sending messages to', inline=False)
     embed.add_field(name='`chanclol channel <new_channel_name>`',

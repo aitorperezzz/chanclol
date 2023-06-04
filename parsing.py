@@ -11,6 +11,7 @@ class Command(Enum):
     PRINT = 2
     CHANNEL = 3
     HELP = 4
+    RANK = 5
 
 
 class ParseResult(Enum):
@@ -23,6 +24,7 @@ class ParseResult(Enum):
     REGISTER_NO_INPUT = 4
     UNREGISTER_NO_INPUT = 5
     CHANNEL_NO_INPUT = 6
+    RANK_NO_INPUT = 7
 
 
 class Parser():
@@ -44,6 +46,8 @@ class Parser():
             return 'Command `unregister` requires an argument'
         elif self.code == ParseResult.CHANNEL_NO_INPUT:
             return 'Command `channel` requires an argument'
+        elif self.code == ParseResult.RANK_NO_INPUT:
+            return 'Command `rank` requires an argument'
         else:
             raise ValueError(
                 'ParsedInput.get_error_string() called with bad code')
@@ -100,5 +104,13 @@ class Parser():
             # chanclol help
             self.command = Command.HELP
             self.code = ParseResult.OK
+        elif command == 'rank':
+            # chanclol rank <username>
+            self.command = Command.RANK
+            if len(words) == 0:
+                self.code = ParseResult.RANK_NO_INPUT
+            else:
+                self.code = ParseResult.OK
+                self.arguments = words
         else:
             self.code = ParseResult.COMMAND_NOT_UNDERSTOOD

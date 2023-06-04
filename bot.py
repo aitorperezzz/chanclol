@@ -136,7 +136,9 @@ class Bot:
             elif parsed_input.command == parsing.Command.CHANNEL:
                 responses = await self.channel(' '.join(parsed_input.arguments), guild)
             elif parsed_input.command == parsing.Command.HELP:
-                responses = message_formatter.create_help_message()
+                responses = [message_formatter.create_help_message()]
+            elif parsed_input.command == parsing.Command.RANK:
+                responses = await self.rank(' '.join(parsed_input.arguments))
             else:
                 raise ValueError('Command is not one of the possible ones')
             for response in responses:
@@ -237,6 +239,27 @@ class Bot:
         names = [await self.riot_api.get_player_name(
             id) for id in guild.last_informed_game_ids]
         return [message_formatter.print_config(names, channel_name)]
+
+    # Print the rank of a player, if it exists
+    async def rank(self, player_name):
+
+        # Get the player's id
+        player_id = await self.riot_api.get_player_id(player_name)
+        if player_id == None:
+            logger.info(
+                f'Riot has not provided an id for player {player_name}')
+            return [message_formatter.no_response_riot_api(player_name)]
+
+        # Get rank info for this player
+        league_info = await self.riot_api.get_league_info(player_id)
+        if league_info == None:
+            logger.info(
+                f'Could not get rank info from Riot API for player {player_name}')
+            return [message_formatter.no_response_riot_api(player_name)]
+
+        # Send a final message
+        logger.info(f'Sending rank of player {player_name}')
+        return [message_formatter.player_rank(player_name, league_info)]
 
     # Get a list of all the guild ids where the player is registered
     def get_guild_ids(self, player_id):
