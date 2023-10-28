@@ -1,0 +1,10 @@
+services:
+  bot:
+    build: .
+    volumes:
+      - type: bind
+        source: ./chanclol.db
+        target: /app/chanclol.db
+      - type: bind
+        source: ./.env
+        target: /app/.env

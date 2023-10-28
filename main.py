@@ -12,10 +12,13 @@ config = None
 with open('config.json') as config_file:
     config = json.load(config_file)
 
-# Set up logging for the complete application with a rotating log
-handler = RotatingFileHandler(
-    filename=config['log_filename'], mode='w', maxBytes=100 * 1024 * 1024, backupCount=10)
-discord.utils.setup_logging(handler=handler)
+# Set up logging for the complete application
+# Rotating file
+discord.utils.setup_logging(handler=RotatingFileHandler(
+    filename=config['log_filename'], mode='w', maxBytes=100 * 1024 * 1024, backupCount=10))
+# Console
+discord.utils.setup_logging(handler=logging.StreamHandler())
+# Level
 level = logging.getLevelName(config['log_level'])
 logging.getLogger().setLevel(level)
 
