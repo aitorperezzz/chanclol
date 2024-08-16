@@ -6,10 +6,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 # These are the queues we care about, with the names we will be using
-relevant_queues = {
-    'RANKED_SOLO_5x5': 'R. Solo',
-    'RANKED_FLEX_SR': 'R. Flex'
-}
+relevant_queues = {"RANKED_SOLO_5x5": "R. Solo", "RANKED_FLEX_SR": "R. Flex"}
 
 
 class LeagueInfo:
@@ -20,14 +17,13 @@ class LeagueInfo:
         if not response:
             return None
         self.queue_type = queue_type
-        self.tier = response['tier']
-        self.rank = response['rank']
-        self.lps = response['leaguePoints']
-        self.wins = response['wins']
-        self.losses = response['losses']
+        self.tier = response["tier"]
+        self.rank = response["rank"]
+        self.lps = response["leaguePoints"]
+        self.wins = response["wins"]
+        self.losses = response["losses"]
         total_games = self.wins + self.losses
-        self.win_rate = int(self.wins / (total_games) *
-                            100) if total_games != 0 else 0
+        self.win_rate = int(self.wins / (total_games) * 100) if total_games != 0 else 0
 
 
 class Participant:
@@ -62,11 +58,12 @@ class MasteryInfo:
         if not self.available:
             return
         # Mastery level
-        self.level = response['championLevel']
+        self.level = response["championLevel"]
         # lastPlayTime is in Unix milliseconds
         time_in_seconds = time.time()
-        self.days_since_last_played = round((time_in_seconds -
-                                             response['lastPlayTime'] / 1000) / 3600 / 24)
+        self.days_since_last_played = round(
+            (time_in_seconds - response["lastPlayTime"] / 1000) / 3600 / 24
+        )
 
 
 class Response:
@@ -79,32 +76,41 @@ class Response:
 class RiotApi:
     def __init__(self, api_key, config):
         # Riot schema
-        self.riot_schema = 'https://euw1.api.riotgames.com'
+        self.riot_schema = "https://euw1.api.riotgames.com"
         # Urls that help decide the version of the data dragon files to download
-        self.versions_json = 'https://ddragon.leagueoflegends.com/api/versions.json'
-        self.realm = 'https://ddragon.leagueoflegends.com/realms/euw.json'
-        self.version = ''
+        self.versions_json = "https://ddragon.leagueoflegends.com/api/versions.json"
+        self.realm = "https://ddragon.leagueoflegends.com/realms/euw.json"
+        self.version = ""
         # Variable that will hold the API key
         self.api_key = api_key
         # Routes inside the riot API
-        self.route_summoner_by_name = '/lol/summoner/v4/summoners/by-name/{player_name}'
-        self.route_summoner = '/lol/summoner/v4/summoners/{player_id}'
-        self.route_league = '/lol/league/v4/entries/by-summoner/{player_id}'
-        self.route_mastery = '/lol/champion-mastery/v4/champion-masteries/by-summoner/{player_id}/by-champion/{champion_id}'
-        self.route_active_games = '/lol/spectator/v4/active-games/by-summoner/{player_id}'
+        self.route_summoner_by_name = "/lol/summoner/v4/summoners/by-name/{player_name}"
+        self.route_summoner = "/lol/summoner/v4/summoners/{player_id}"
+        self.route_league = "/lol/league/v4/entries/by-summoner/{player_id}"
+        self.route_mastery = "/lol/champion-mastery/v4/champion-masteries/by-summoner/{player_id}/by-champion/{champion_id}"
+        self.route_active_games = (
+            "/lol/spectator/v4/active-games/by-summoner/{player_id}"
+        )
         # Dragon route to fetch info about the champions
-        self.route_champions = 'http://ddragon.leagueoflegends.com/cdn/{version}/data/en_US/champion.json'
+        self.route_champions = (
+            "http://ddragon.leagueoflegends.com/cdn/{version}/data/en_US/champion.json"
+        )
         self.data_champions = {}
         # Dragon route to fetch info about spells
-        self.route_spells = 'http://ddragon.leagueoflegends.com/cdn/{version}/data/en_US/summoner.json'
+        self.route_spells = (
+            "http://ddragon.leagueoflegends.com/cdn/{version}/data/en_US/summoner.json"
+        )
         self.data_spells = {}
         # Dictionary of encrypted summoner ids as keys, and player names as values
         self.names = {}
         # Create a rate limiter that will give permissions to make requests to riot API
         restrictions = []
-        for restriction in config['restrictions']:
-            restrictions.append(rate_limiter.Restriction(
-                restriction['num_requests'], restriction['interval_seconds'] * 1000))
+        for restriction in config["restrictions"]:
+            restrictions.append(
+                rate_limiter.Restriction(
+                    restriction["num_requests"], restriction["interval_seconds"] * 1000
+                )
+            )
         self.rate_limiter = rate_limiter.RateLimiter(restrictions)
         # Riot API will have a database (it will be set by the bot)
         self.database = None
@@ -119,7 +125,7 @@ class RiotApi:
         url = self.riot_schema + self.route_league.format(player_id=player_id)
         response = await self._get(url)
         if response.status != 200:
-            logger.error('Could not make a request to the Riot league API')
+            logger.error("Could not make a request to the Riot league API")
             return None
 
         # Prepare the final result
@@ -128,17 +134,17 @@ class RiotApi:
     # Returns the mastery of certain player with certain champion
     async def get_mastery_info(self, player_id, champion_id):
 
-        url = self.riot_schema + \
-            self.route_mastery.format(
-                player_id=player_id, champion_id=champion_id)
+        url = self.riot_schema + self.route_mastery.format(
+            player_id=player_id, champion_id=champion_id
+        )
         response = await self._get(url)
         if response.status == 404:
             logger.info(
-                f'Mastery was not found for this player {await self.get_player_name(player_id)} and champion {champion_id} combination')
+                f"Mastery was not found for this player {await self.get_player_name(player_id)} and champion {champion_id} combination"
+            )
             return MasteryInfo(None)
         elif response.status != 200:
-            logger.error(
-                f'Error retrieving mastery for player with id {player_id}')
+            logger.error(f"Error retrieving mastery for player with id {player_id}")
             return None
         else:
             return MasteryInfo(response.data)
@@ -146,33 +152,29 @@ class RiotApi:
     # Returns information about ongoing games
     async def get_active_game_info(self, player_id):
 
-        url = self.riot_schema + \
-            self.route_active_games.format(player_id=player_id)
+        url = self.riot_schema + self.route_active_games.format(player_id=player_id)
         response = await self._get(url)
         player_name = await self.get_player_name(player_id)
         if response.status == 404:
-            logger.debug(f'Player {player_name} is not in game')
+            logger.debug(f"Player {player_name} is not in game")
             self.trim_active_game_cache(player_id)
             return await self.create_in_game_info(None)
         elif response.status == 429:
-            logger.warning('Rate limited')
+            logger.warning("Rate limited")
             return None
         elif response.status != 200:
-            logger.warning(
-                'Could not make a request to the Riot active game API')
+            logger.warning("Could not make a request to the Riot active game API")
             return None
         else:
-            logger.debug(f'Player {player_name} is in game')
-            game_id = response.data['gameId']
+            logger.debug(f"Player {player_name} is in game")
+            game_id = response.data["gameId"]
             # If we have this game cached, just return it
             cached_game_info = self.get_game_from_cache(game_id)
             if cached_game_info != None:
-                logger.debug(
-                    f'Player {player_name} is in an already cached game')
+                logger.debug(f"Player {player_name} is in an already cached game")
                 return cached_game_info
             # If we do not have it cached, we need to make the complete request
-            logger.info(
-                f'Player {player_name} is in a game not found in the cache')
+            logger.info(f"Player {player_name} is in a game not found in the cache")
             active_game = await self.create_in_game_info(response.data)
             # Finally add the game to the cache if it's valid
             if active_game:
@@ -187,7 +189,8 @@ class RiotApi:
         if game_id_to_delete != None:
             del self.active_game_cache[game_id_to_delete]
             logger.info(
-                f'Active games cache has been trimmed to {len(self.active_game_cache)} elements')
+                f"Active games cache has been trimmed to {len(self.active_game_cache)} elements"
+            )
 
     # Gets the game id that corresponds to the provided player, if any
     def get_game_id_for_player(self, player_id):
@@ -201,10 +204,10 @@ class RiotApi:
     # Check if the info for game id provided already exists
     def get_game_from_cache(self, game_id):
         if game_id in self.active_game_cache:
-            logger.debug(f'Game id {game_id} has been found in the cache')
+            logger.debug(f"Game id {game_id} has been found in the cache")
             return self.active_game_cache[game_id]
         else:
-            logger.debug(f'Game id {game_id} has not been found in the cache')
+            logger.debug(f"Game id {game_id} has not been found in the cache")
             return None
 
     # Create the in game info with the current data returned by the in game API,
@@ -215,21 +218,22 @@ class RiotApi:
         in_game_info.in_game = response != None
         if not response:
             return in_game_info
-        in_game_info.game_id = response['gameId']
-        in_game_info.game_length_minutes = round(
-            response['gameLength'] / 60)
+        in_game_info.game_id = response["gameId"]
+        in_game_info.game_length_minutes = round(response["gameLength"] / 60)
         # Create the list of all the provided team ids
-        team_ids = list(set([participant['teamId']
-                        for participant in response['participants']]))
+        team_ids = list(
+            set([participant["teamId"] for participant in response["participants"]])
+        )
         # Fill in the teams
         for team_id in team_ids:
             in_game_info.teams[team_id] = []
-            for participant in response['participants']:
-                if participant['teamId'] == team_id:
+            for participant in response["participants"]:
+                if participant["teamId"] == team_id:
                     participant_created = await self.create_participant(participant)
                     if not participant_created:
                         logger.error(
-                            f'Could not create participant while preparing in game info')
+                            f"Could not create participant while preparing in game info"
+                        )
                         return None
                     in_game_info.teams[team_id].append(participant_created)
         return in_game_info
@@ -240,20 +244,22 @@ class RiotApi:
         if not response:
             return None
         participant = Participant()
-        participant.player_name = response['summonerName']
-        participant.player_id = response['summonerId']
+        participant.player_name = response["summonerName"]
+        participant.player_id = response["summonerId"]
         # Champion name and spell names
-        champion_id = response['championId']
+        champion_id = response["championId"]
         participant.champion_name = await self.get_champion_name(champion_id)
         if participant.champion_name == None:
             return None
-        participant.spell1_name = await self.get_spell_name(response['spell1Id'])
+        participant.spell1_name = await self.get_spell_name(response["spell1Id"])
         if participant.spell1_name == None:
             return None
-        participant.spell2_name = await self.get_spell_name(response['spell2Id'])
+        participant.spell2_name = await self.get_spell_name(response["spell2Id"])
         if participant.spell2_name == None:
             return None
-        participant.mastery = await self.get_mastery_info(participant.player_id, champion_id)
+        participant.mastery = await self.get_mastery_info(
+            participant.player_id, champion_id
+        )
         if participant.mastery == None:
             return None
         # Get the current rank of the player
@@ -262,14 +268,13 @@ class RiotApi:
 
     def create_league_info(self, response):
         if not response:
-            logger.error(f'Cannot create league info, response not available')
+            logger.error(f"Cannot create league info, response not available")
             return []
         result = []
         for relevant_queue in relevant_queues:
             for league in response.data:
-                if league['queueType'] == relevant_queue:
-                    league_info = LeagueInfo(
-                        league, relevant_queues[relevant_queue])
+                if league["queueType"] == relevant_queue:
+                    league_info = LeagueInfo(league, relevant_queues[relevant_queue])
                     result.append(league_info)
         return result
 
@@ -279,12 +284,12 @@ class RiotApi:
         url = self.route_champions.format(version=self.version)
         response = await self._get(url)
         if response.status != 200:
-            logger.error('Could not make request to Riot champions API')
+            logger.error("Could not make request to Riot champions API")
             return None
 
         # Keep a copy of the data
-        for champion in response.data['data'].values():
-            self.data_champions[int(champion['key'])] = champion['id']
+        for champion in response.data["data"].values():
+            self.data_champions[int(champion["key"])] = champion["id"]
         self.database.set_champions(self.data_champions)
 
     # Creates the internal data for spells
@@ -293,12 +298,12 @@ class RiotApi:
         url = self.route_spells.format(version=self.version)
         response = await self._get(url)
         if response.status != 200:
-            logger.error('Could not make request to Riot spells API')
+            logger.error("Could not make request to Riot spells API")
             return None
 
         # keep a copy of the data
-        for spell in response.data['data'].values():
-            self.data_spells[int(spell['key'])] = spell['name']
+        for spell in response.data["data"].values():
+            self.data_spells[int(spell["key"])] = spell["name"]
         self.database.set_spells(self.data_spells)
 
     # Returns the champion name corresponding to a champion id
@@ -308,7 +313,7 @@ class RiotApi:
             await self.request_champion_data()
 
         if not champion_id in self.data_champions:
-            logger.error(f'Could not find name of champion id {champion_id}')
+            logger.error(f"Could not find name of champion id {champion_id}")
             return None
         return self.data_champions[champion_id]
 
@@ -319,7 +324,7 @@ class RiotApi:
             await self.request_spell_data()
 
         if not spell_id in self.data_spells:
-            logger.error(f'Could not find name of spell id {spell_id}')
+            logger.error(f"Could not find name of spell id {spell_id}")
             return None
         return self.data_spells[spell_id]
 
@@ -341,26 +346,27 @@ class RiotApi:
                 return player_id
 
         # Make a request if not
-        url = self.riot_schema + \
-            self.route_summoner_by_name.format(player_name=player_name)
+        url = self.riot_schema + self.route_summoner_by_name.format(
+            player_name=player_name
+        )
         response = await self._get(url)
         if response.status != 200:
-            logger.error('Could not make request to the Riot summoner API')
+            logger.error("Could not make request to the Riot summoner API")
             return None
 
         if not response.data:
-            logger.info(f'Player {player_name} not found')
+            logger.info(f"Player {player_name} not found")
             return None
 
         # Keep a copy of the player id for later
-        player_id = response.data['id']
+        player_id = response.data["id"]
         if player_id in self.names:
             # In this case, we have an alternative name for the player, so nothing to do
             logger.debug(
-                f'Player with id {player_id} already exists in the database with another name')
+                f"Player with id {player_id} already exists in the database with another name"
+            )
         else:
-            logger.debug(
-                f'Caching player {player_name} with player id {player_id}')
+            logger.debug(f"Caching player {player_name} with player id {player_id}")
             self.names[player_id] = player_name
             self.database.add_name(player_id, player_name)
         return player_id
@@ -372,7 +378,7 @@ class RiotApi:
         if player_id in self.names:
             return self.names[player_id]
         else:
-            logger.debug(f'Requesting name of player {player_id}')
+            logger.debug(f"Requesting name of player {player_id}")
             name = await self.request_player_name(player_id)
             if name != None:
                 self.names[player_id] = name
@@ -382,25 +388,24 @@ class RiotApi:
     # Specifically makes a request to get the current player name
     async def request_player_name(self, player_id):
 
-        url = self.riot_schema + \
-            self.route_summoner.format(player_id=player_id)
+        url = self.riot_schema + self.route_summoner.format(player_id=player_id)
         response = await self._get(url)
         if response.status != 200:
-            logger.error('Could not make request to the Riot summoner API')
+            logger.error("Could not make request to the Riot summoner API")
             return None
 
         if not response.data:
-            logger.info(f'Name of player {player_id} could not be requested')
+            logger.info(f"Name of player {player_id} could not be requested")
             return None
 
         # Return just the name
-        return response.data['name']
+        return response.data["name"]
 
     # Purges the current content of player names by taking into account
     # the list of ids to keep
     async def purge_names(self, ids_to_keep):
-        logger.info(f'Current number of names: {len(self.names)}')
-        logger.info(f'Names to keep: {len(ids_to_keep)}')
+        logger.info(f"Current number of names: {len(self.names)}")
+        logger.info(f"Names to keep: {len(ids_to_keep)}")
         # First purge the data in memory
         for id in [id for id in self.names]:
             if not id in ids_to_keep:
@@ -409,8 +414,7 @@ class RiotApi:
         for id in self.names:
             name = await self.request_player_name(id)
             if name == None:
-                logger.error(
-                    f'Name of player {id} was not found. Keeping old name')
+                logger.error(f"Name of player {id} was not found. Keeping old name")
                 continue
             self.names[id] = name
         # Now that the final dictionary is built, call the database to also perform the purge
@@ -420,9 +424,9 @@ class RiotApi:
     # Returns None of the header could not be built.
     def build_api_header(self):
         if self.api_key == None:
-            logger.error('API key is not available')
+            logger.error("API key is not available")
             return None
-        return {'X-Riot-Token': self.api_key}
+        return {"X-Riot-Token": self.api_key}
 
     # Creates an internal response with the aiohttp response, logging in the
     # process the relevant status codes for this application
@@ -436,31 +440,32 @@ class RiotApi:
         if result.status == 200:
             result.data = await response.json()
         elif result.status == 429:
-            logger.warning('Received 429: Riot is rate limiting requests')
+            logger.warning("Received 429: Riot is rate limiting requests")
             self.rate_limiter.received_rate_limit()
         elif result.status == 404:
-            logger.debug('Received 404: data not found')
+            logger.debug("Received 404: data not found")
         elif result.status == 403:
-            message = 'Received 403: forbidden. Probably API key is not valid'
+            message = "Received 403: forbidden. Probably API key is not valid"
             logger.error(message)
             raise ValueError(message)
         else:
             logger.error(
-                f'Unknown error connecting to Riot API: {await response.json()}')
+                f"Unknown error connecting to Riot API: {await response.json()}"
+            )
         return result
 
     # Makes a simple request using the requests module.
     async def _get(self, url):
 
         # Wait until the request can be made
-        vital = not self.route_active_games.format(player_id='') in url
+        vital = not self.route_active_games.format(player_id="") in url
         allowed = await self.rate_limiter.allowed(vital)
         if not allowed:
-            logger.warning('Rate limiter is not allowing the request')
+            logger.warning("Rate limiter is not allowing the request")
             return await self.create_response(None)
 
         # Make the request and check the response status
-        logger.debug(f'Making a request to url {url}')
+        logger.debug(f"Making a request to url {url}")
         async with aiohttp.ClientSession() as session:
             async with session.get(url, headers=self.build_api_header()) as r:
                 return await self.create_response(r)
@@ -473,19 +478,19 @@ class RiotApi:
         url = self.versions_json
         versions = await self._get(url)
         if versions.status != 200:
-            logger.error('Could not make request to Riot versions API')
+            logger.error("Could not make request to Riot versions API")
             return
         latest_version = versions.data[0]
-        logger.info(f'Latest patch available in dd is {latest_version}')
+        logger.info(f"Latest patch available in dd is {latest_version}")
 
         # Check if EUW is already on that patch
         url = self.realm
         response = await self._get(url)
         if response.status != 200:
-            logger.error('Could not make request to Riot realm API')
+            logger.error("Could not make request to Riot realm API")
             return
-        realm_version = response.data['dd']
-        logger.info(f'Realm patch for EUW is {realm_version}')
+        realm_version = response.data["dd"]
+        logger.info(f"Realm patch for EUW is {realm_version}")
 
         # Select the correct version. It should be the one indicated by the realm, but it should also exist
         # in versions.json
@@ -496,20 +501,23 @@ class RiotApi:
                 break
         if new_version == None:
             raise ValueError(
-                f'The realm version {realm_version} has not been found in versions.json')
+                f"The realm version {realm_version} has not been found in versions.json"
+            )
         elif new_version == latest_version:
-            logger.info(f'Realm is on the latest version {latest_version}')
+            logger.info(f"Realm is on the latest version {latest_version}")
         else:
             logger.warning(
-                f'Realm is on version {realm_version} while the latest version is {latest_version}')
+                f"Realm is on version {realm_version} while the latest version is {latest_version}"
+            )
 
         # If we need to update the internal version, force an update of the internal data
         if self.version != new_version:
             logger.info(
-                f'Internal version ({self.version}) is not in line with {new_version}')
+                f"Internal version ({self.version}) is not in line with {new_version}"
+            )
             self.version = new_version
             self.database.set_version(self.version)
             self.data_champions.clear()
             self.data_spells.clear()
         else:
-            logger.info(f'Internal version is in line with {new_version}')
+            logger.info(f"Internal version is in line with {new_version}")

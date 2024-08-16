@@ -18,7 +18,7 @@ class ParseResult(Enum):
     # Possible results after parsing user input
     # from a syntax point of view
     OK = 0
-    NOT_BOT_PREFIX = 1,
+    NOT_BOT_PREFIX = 1
     NO_COMMAND = 2
     COMMAND_NOT_UNDERSTOOD = 3
     REGISTER_NO_INPUT = 4
@@ -27,34 +27,33 @@ class ParseResult(Enum):
     RANK_NO_INPUT = 7
 
 
-class Parser():
+class Parser:
     def __init__(self, message):
         self.code = None
         self.command = None
         self.arguments = None
-        self.prefixes = ['chanclol', 'Chanclol']
+        self.prefixes = ["chanclol", "Chanclol"]
         self.parse(message)
 
     def get_error_string(self):
         if self.code == ParseResult.NO_COMMAND:
-            return 'No command provided'
+            return "No command provided"
         elif self.code == ParseResult.COMMAND_NOT_UNDERSTOOD:
-            return 'Command not recognised'
+            return "Command not recognised"
         elif self.code == ParseResult.REGISTER_NO_INPUT:
-            return 'Command `register` requires an argument'
+            return "Command `register` requires an argument"
         elif self.code == ParseResult.UNREGISTER_NO_INPUT:
-            return 'Command `unregister` requires an argument'
+            return "Command `unregister` requires an argument"
         elif self.code == ParseResult.CHANNEL_NO_INPUT:
-            return 'Command `channel` requires an argument'
+            return "Command `channel` requires an argument"
         elif self.code == ParseResult.RANK_NO_INPUT:
-            return 'Command `rank` requires an argument'
+            return "Command `rank` requires an argument"
         else:
-            raise ValueError(
-                'ParsedInput.get_error_string() called with bad code')
+            raise ValueError("ParsedInput.get_error_string() called with bad code")
 
     def parse(self, message):
         if not message.startswith(tuple(self.prefixes)):
-            logger.debug('Rejecting message not intended for the bot')
+            logger.debug("Rejecting message not intended for the bot")
             self.code = ParseResult.NOT_BOT_PREFIX
             return
 
@@ -64,7 +63,7 @@ class Parser():
             if message.startswith(prefix):
                 prefix = prefix
                 break
-        words = message[len(prefix):].strip(' \n\t').split()
+        words = message[len(prefix) :].strip(" \n\t").split()
         if len(words) == 0:
             self.code = ParseResult.NO_COMMAND
             return
@@ -72,7 +71,7 @@ class Parser():
         words = words[1:]
 
         # Check the correct command
-        if command == 'register':
+        if command == "register":
             # chanclol register <username>
             self.command = Command.REGISTER
             if len(words) == 0:
@@ -80,7 +79,7 @@ class Parser():
             else:
                 self.code = ParseResult.OK
                 self.arguments = words
-        elif command == 'unregister':
+        elif command == "unregister":
             # chanclol unregister <username>
             self.command = Command.UNREGISTER
             if len(words) == 0:
@@ -88,11 +87,11 @@ class Parser():
             else:
                 self.code = ParseResult.OK
                 self.arguments = words
-        elif command == 'print':
+        elif command == "print":
             # chanclol print
             self.command = Command.PRINT
             self.code = ParseResult.OK
-        elif command == 'channel':
+        elif command == "channel":
             # chanclol channel <new_channel>
             self.command = Command.CHANNEL
             if len(words) == 0:
@@ -100,11 +99,11 @@ class Parser():
             else:
                 self.code = ParseResult.OK
                 self.arguments = words
-        elif command == 'help':
+        elif command == "help":
             # chanclol help
             self.command = Command.HELP
             self.code = ParseResult.OK
-        elif command == 'rank':
+        elif command == "rank":
             # chanclol rank <username>
             self.command = Command.RANK
             if len(words) == 0:

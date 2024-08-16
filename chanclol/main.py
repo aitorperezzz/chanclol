@@ -9,37 +9,40 @@ import json
 
 # Read the configuration
 config = None
-with open('config.json') as config_file:
+with open("config.json") as config_file:
     config = json.load(config_file)
 
 # Set up logging for the complete application
 # Rotating file
-discord.utils.setup_logging(handler=RotatingFileHandler(
-    filename=config['log_filename'], mode='w', maxBytes=100 * 1024 * 1024, backupCount=10))
+discord.utils.setup_logging(
+    handler=RotatingFileHandler(
+        filename=config["log_filename"],
+        mode="w",
+        maxBytes=100 * 1024 * 1024,
+        backupCount=10,
+    )
+)
 # Console
 discord.utils.setup_logging(handler=logging.StreamHandler())
 # Level
-level = logging.getLevelName(config['log_level'])
+level = logging.getLevelName(config["log_level"])
 logging.getLogger().setLevel(level)
 
 logger = logging.getLogger(__name__)
 
 # Load env variables
 load_dotenv()
-riot_api_key = os.getenv('RIOT_API_KEY')
+riot_api_key = os.getenv("RIOT_API_KEY")
 if riot_api_key == None:
-    raise ValueError(
-        'RIOT_API_KEY has not been found in the environment')
-discord_token = os.getenv('DISCORD_TOKEN')
+    raise ValueError("RIOT_API_KEY has not been found in the environment")
+discord_token = os.getenv("DISCORD_TOKEN")
 if discord_token == None:
-    raise ValueError(
-        'DISCORD_TOKEN has not been found in the environment')
+    raise ValueError("DISCORD_TOKEN has not been found in the environment")
 
 # Create a discord client with the correct intents
 intents = discord.Intents.default()
 intents.message_content = True
-activity = discord.Activity(
-    type=discord.ActivityType.listening, name="chanclol help")
+activity = discord.Activity(type=discord.ActivityType.listening, name="chanclol help")
 client = discord.Client(intents=intents, activity=activity)
 
 
@@ -49,15 +52,15 @@ chanclol_bot = bot.Bot(client, riot_api_key, config)
 
 @client.event
 async def on_ready():
-    logger.info(f'{client.user} has connected to Discord')
+    logger.info(f"{client.user} has connected to Discord")
     logger.info(
-        f'Client is connected to the following servers: {", ".join([str(guild) for guild in client.guilds])}')
+        f'Client is connected to the following servers: {", ".join([str(guild) for guild in client.guilds])}'
+    )
 
 
 @client.event
 async def on_message(message):
-    logger.debug(
-        f'Forwarding message from {message.author}: {message.content}')
+    logger.debug(f"Forwarding message from {message.author}: {message.content}")
     await chanclol_bot.receive(message)
 
 
@@ -69,6 +72,7 @@ async def spawn_main_tasks():
     client_task = asyncio.create_task(client.start(discord_token))
     # Wait for all tasks to complete (in reality they never will)
     await asyncio.gather(bot_task, client_task)
+
 
 # Call main function and block here
 asyncio.run(spawn_main_tasks())

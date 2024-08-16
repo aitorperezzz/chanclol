@@ -3,3 +3,7 @@ __pycache__/
 .env
 *.db
 *.log
+bin
+include
+lib
+lib64

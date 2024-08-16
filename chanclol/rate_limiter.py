@@ -51,7 +51,7 @@ class Restriction:
 
     # Returns a string with the current status of the restriction
     def status_message(self, count):
-        return f'{int(self.interval / 1000)} secs, {count} reqs'
+        return f"{int(self.interval / 1000)} secs, {count} reqs"
 
 
 class RateLimiter:
@@ -85,7 +85,7 @@ class RateLimiter:
             current_queue_size = len(self.pending_vital_requests)
             if analysis.allowed:
                 if vital or not vital and current_queue_size == 0:
-                    logger.debug('Allowing request')
+                    logger.debug("Allowing request")
                     # In this case, allow the request and pop it out of the queue
                     if my_uuid in self.pending_vital_requests:
                         self.pending_vital_requests.remove(my_uuid)
@@ -95,26 +95,30 @@ class RateLimiter:
                 else:
                     # Non vital and queue is not empty
                     logger.warning(
-                        f'Rejecting a non vital request because queue is not empty {analysis.status} [queue size: {current_queue_size}]')
+                        f"Rejecting a non vital request because queue is not empty {analysis.status} [queue size: {current_queue_size}]"
+                    )
                     return False
             elif not vital:
                 logger.warning(
-                    f'Rejecting a non vital request {analysis.status} [queue size: {current_queue_size}]')
+                    f"Rejecting a non vital request {analysis.status} [queue size: {current_queue_size}]"
+                )
                 return False
             else:
                 # Add this request to the pending ones if needed
                 if not my_uuid in self.pending_vital_requests:
                     self.pending_vital_requests.add(my_uuid)
                 logger.warning(
-                    f'Delaying a vital request {int(analysis.wait_time / 1000)} seconds {analysis.status} [queue size: {current_queue_size}]')
+                    f"Delaying a vital request {int(analysis.wait_time / 1000)} seconds {analysis.status} [queue size: {current_queue_size}]"
+                )
                 await asyncio.sleep(analysis.wait_time / 1000)
 
     # Trims the history of requests by deleting all the timestamps older than
     # the max interval that all restrictions care about
     def trim(self):
         current_time = get_time_milliseconds()
-        self.history = [x for x in self.history if (
-            current_time - x) < self.max_interval]
+        self.history = [
+            x for x in self.history if (current_time - x) < self.max_interval
+        ]
 
     # Decides if a request is allowed according to all the restrictions
     def get_restrictions_analysis(self):
@@ -122,10 +126,8 @@ class RateLimiter:
         for restriction in self.restrictions:
             analysis_list.append(restriction.perform_analysis(self.history))
         # Merge the received analysis
-        allowed = functools.reduce(
-            lambda a, b: a.allowed and b.allowed, analysis_list)
-        status = ' '.join(
-            f'[{analysis.status}]' for analysis in analysis_list)
+        allowed = functools.reduce(lambda a, b: a.allowed and b.allowed, analysis_list)
+        status = " ".join(f"[{analysis.status}]" for analysis in analysis_list)
         wait_time = max([analysis.wait_time for analysis in analysis_list])
         # If the rate limiting stopwatch is running we will need to wait in any case
         if self.stopwatch.get_is_running():
