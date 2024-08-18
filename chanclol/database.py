@@ -19,34 +19,35 @@ class Database:
             logger.info("Creating tables in database")
             logger.info("Creating table guilds")
             query = """CREATE TABLE guilds (
-                'id' INT unsigned DEFAULT NULL,
+                'guild_id' INT unsigned DEFAULT NULL,
                 'channel_id' INT unsigned DEFAULT NULL,
-                PRIMARY KEY ('id'));"""
+                PRIMARY KEY ('guild_id'));"""
             self.execute_query(query)
             logger.info("Creating table players")
             query = """CREATE TABLE players (
-                'id' VARCHAR(256) NOT NULL DEFAULT '',
+                'puuid' VARCHAR(256) NOT NULL DEFAULT '',
                 'guild_id' INT unsigned DEFAULT NULL,
                 'last_informed_game_id' INT unsigned DEFAULT NULL,
-                PRIMARY KEY ('id', 'guild_id'));"""
+                PRIMARY KEY ('puuid', 'guild_id'));"""
             self.execute_query(query)
             logger.info("Creating table champions")
             query = """CREATE TABLE champions (
-                'id' INT unsigned DEFAULT NULL,
+                'champion_id' INT unsigned DEFAULT NULL,
                 'name' VARCHAR(256) NOT NULL DEFAULT '',
-                PRIMARY KEY ('id'));"""
+                PRIMARY KEY ('champion_id'));"""
             self.execute_query(query)
-            logger.info("Creating table spells")
-            query = """CREATE TABLE spells (
-                'id' INT unsigned DEFAULT NULL,
-                'name' VARCHAR(256) NOT NULL DEFAULT '',
-                PRIMARY KEY ('id'));"""
+            logger.info("Creating table riot_ids")
+            query = """CREATE TABLE riot_ids (
+                'puuid' VARCHAR(256) NOT NULL DEFAULT '',
+                'game_name' VARCHAR(256) NOT NULL DEFAULT '',
+                'tag_line' VARCHAR(256) NOT NULL DEFAULT '',
+                PRIMARY KEY ('puuid'));"""
             self.execute_query(query)
-            logger.info("Creating table names")
-            query = """CREATE TABLE names (
-                'id' VARCHAR(256) NOT NULL DEFAULT '',
-                'name' VARCHAR(256) NOT NULL DEFAULT '',
-                PRIMARY KEY ('id'));"""
+            logger.info("Creating table summoner_ids")
+            query = """CREATE TABLE summoner_ids (
+                'puuid' VARCHAR(256) NOT NULL DEFAULT '',
+                'summoner_id' VARCHAR(256) NOT NULL DEFAULT '',
+                PRIMARY KEY ('puuid'));"""
             self.execute_query(query)
             logger.info("Creating table version")
             query = """CREATE TABLE version (
@@ -90,7 +91,7 @@ class Database:
         self.execute_query("DELETE FROM champions;")
         for id in champions:
             self.execute_query(
-                "INSERT INTO champions (id, name) VALUES (?, ?);",
+                "INSERT INTO champions (champion_id, name) VALUES (?, ?);",
                 (
                     id,
                     champions[id],
@@ -109,43 +110,19 @@ class Database:
             logger.info("Table champions is currently empty")
         return champions
 
-    # Once the Riot API has downloaded the spells data, it will call this function
-    # to store them
-    def set_spells(self, spells):
-        logger.info("Setting spells into the database")
-        self.execute_query("DELETE FROM spells;")
-        for id in spells:
-            self.execute_query(
-                "INSERT INTO spells (id, name) VALUES (?, ?);",
-                (
-                    id,
-                    spells[id],
-                ),
-            )
-
-    # During initialisation, the Riot API will check if the database already has champions data
-    def get_spells(self):
-        logger.info("Getting spells from the database")
-        query = "SELECT * FROM spells;"
-        result = self.execute_query(query)
-        spells = {}
-        for element in result:
-            spells[element[0]] = element[1]
-        if len(spells) == 0:
-            logger.info("Table spells is currently empty")
-        return spells
-
     # Decides if the provided guild exists in the database
     def guild_exists(self, guild_id):
-        result = self.execute_query("SELECT * FROM guilds WHERE id=?;", (guild_id,))
+        result = self.execute_query(
+            "SELECT * FROM guilds WHERE guild_id=?;", (guild_id,)
+        )
         return len(result) == 1
 
     # Decides if the provided player exists in the database for the provided guild
-    def player_exists(self, player_id, guild_id):
+    def player_exists(self, puuid, guild_id):
         result = self.execute_query(
-            "SELECT * FROM players WHERE id=? AND guild_id=?;",
+            "SELECT * FROM players WHERE puuid=? AND guild_id=?;",
             (
-                player_id,
+                puuid,
                 guild_id,
             ),
         )
@@ -165,38 +142,35 @@ class Database:
                 guilds[guild_id] = bot.Guild(guild_id, channel_id)
         # Add players to the guilds
         for player_db in players_db:
-            player_id = player_db[0]
-            player_guild = player_db[1]
+            puuid = player_db[0]
+            guild_id = player_db[1]
             last_informed_game_id = player_db[2]
-            if not player_guild in guilds:
+            if not guild_id in guilds:
                 logger.error(
-                    f"Player's guild id {player_guild} does not exist in the database"
+                    f"Player's guild id {guild_id} does not exist in the database"
                 )
                 continue
-            if player_id in guilds[player_guild].last_informed_game_ids:
-                logger.error(
-                    f"Player {player_id} is already one of the guild's players"
-                )
+            if puuid in guilds[guild_id].last_informed_game_ids:
+                logger.error(f"Player {puuid} is already one of the guild's players")
                 continue
-            guilds[player_guild].last_informed_game_ids[
-                player_id
-            ] = last_informed_game_id
+            guilds[guild_id].last_informed_game_ids[puuid] = last_informed_game_id
         if len(guilds) == 0:
             logger.info("No guilds present in the database")
         return guilds
 
     # Create the dictionary of players as stored in the database
     def get_players(self):
+
         logger.info("Getting players from the database")
         players_db = self.execute_query("SELECT * FROM players;")
-        player_ids = []
+        puuids = []
         for player_db in players_db:
-            player_ids.append(player_db[0])
+            puuids.append(player_db[0])
         # Keep only unique players
-        player_ids = list(set(player_ids))
+        puuids = list(set(puuids))
         players = {}
-        for id in player_ids:
-            players[id] = bot.Player(id)
+        for puuid in puuids:
+            players[puuid] = bot.Player(puuid)
         if len(players) == 0:
             logger.info("No players present in the database")
         return players
@@ -208,7 +182,7 @@ class Database:
             logger.error(f"Cannot add guild {guild_id} as it already exists")
             return
         self.execute_query(
-            "INSERT INTO guilds (id, channel_id) VALUES (?, ?);",
+            "INSERT INTO guilds (guild_id, channel_id) VALUES (?, ?);",
             (
                 guild_id,
                 channel_id,
@@ -216,36 +190,36 @@ class Database:
         )
 
     # Adds the specified player to the specified guild
-    def add_player_to_guild(self, player_id, guild_id):
-        logger.info(f"Adding player {player_id} to guild {guild_id}")
+    def add_player_to_guild(self, puuid, guild_id):
+        logger.info(f"Adding player {puuid} to guild {guild_id}")
         if not self.guild_exists(guild_id):
             logger.error(f"Cannot add player to guild {guild_id} as it does not exist")
             return
         # Execute query to add player
         self.execute_query(
-            "INSERT INTO players (id, guild_id) VALUES (?, ?);",
+            "INSERT INTO players (puuid, guild_id) VALUES (?, ?);",
             (
-                player_id,
+                puuid,
                 guild_id,
             ),
         )
 
     # Removes a player from the provided guild
-    def remove_player_from_guild(self, player_id, guild_id):
-        logger.info(f"Removing player {player_id} from guild {guild_id}")
+    def remove_player_from_guild(self, puuid, guild_id):
+        logger.info(f"Removing player {puuid} from guild {guild_id}")
         if not self.guild_exists(guild_id):
             logger.error(
                 f"Cannot remove player from guild {guild_id} as it does not exist"
             )
             return
-        if not self.player_exists(player_id, guild_id):
-            logger.error(f"Cannot remove player {player_id} as it does not exist")
+        if not self.player_exists(puuid, guild_id):
+            logger.error(f"Cannot remove player {puuid} as it does not exist")
             return
         # Execute query to remove player
         self.execute_query(
-            "DELETE FROM players WHERE id=? AND guild_id=?;",
+            "DELETE FROM players WHERE puuid=? AND guild_id=?;",
             (
-                player_id,
+                puuid,
                 guild_id,
             ),
         )
@@ -260,66 +234,111 @@ class Database:
             return
         # Change channel
         self.execute_query(
-            "UPDATE guilds SET channel_id=? WHERE id=?;", (channel_id, guild_id)
+            "UPDATE guilds SET channel_id=? WHERE guild_id=?;", (channel_id, guild_id)
         )
 
     # Changes the last informed game id of the specified player in the specified guild
-    def set_last_informed_game_id(self, player_id, guild_id, last_informed_game_id):
+    def set_last_informed_game_id(self, puuid, guild_id, last_informed_game_id):
         logger.info(
-            f"Setting last informed game id for player {player_id} in guild {guild_id} to {last_informed_game_id}"
+            f"Setting last informed game id for player {puuid} in guild {guild_id} to {last_informed_game_id}"
         )
         # Check the player does exist in the guild
-        if not self.player_exists(player_id, guild_id):
+        if not self.player_exists(puuid, guild_id):
             logger.error(
-                f"Cannot set last informed game id of player {player_id} as it does not exist"
+                f"Cannot set last informed game id of player {puuid} as it does not exist"
             )
             return
         # Change last informed game id
         self.execute_query(
             "UPDATE players SET last_informed_game_id=? WHERE id=? AND guild_id=?;",
-            (last_informed_game_id, player_id, guild_id),
+            (last_informed_game_id, puuid, guild_id),
         )
 
-    # Get all the player names as stored in the database
-    def get_names(self):
-        logger.info("Getting names")
-        result = self.execute_query("SELECT * FROM names;")
+    # Get all the riot ids as stored in the database
+    def get_riot_ids(self):
+        logger.info("Getting riot ids")
+        result = self.execute_query("SELECT * FROM riot_ids;")
         # Convert to a dictionary
-        names = {}
+        riot_ids = {}
         for element in result:
-            names[element[0]] = element[1]
-        if len(names) == 0:
-            logger.info("No names present in the database")
-        return names
+            riot_ids[element[0]] = (element[1], element[2])
+        if len(riot_ids) == 0:
+            logger.info("No riot ids present in the database")
+        return riot_ids
 
     # Add a name to the database
-    def add_name(self, player_id, player_name):
-        logger.info(f"Adding name {player_name} of player {player_id} to the database")
+    def add_riot_id(self, puuid, riot_id):
+        logger.info(f"Adding riot id {riot_id} of player {puuid} to the database")
         self.execute_query(
-            "INSERT INTO names (id, name) VALUES (?, ?);", (player_id, player_name)
+            "INSERT INTO riot_ids (puuid, game_name, tag_line) VALUES (?, ?, ?);",
+            (puuid, riot_id[0], riot_id[1]),
         )
 
     # Purges all the names from the database, except some that we need to keep
-    def update_names(self, names_to_keep):
+    def set_riot_ids(self, riot_ids):
         # Perform query into the database to delete the items we do not want
-        query = "DELETE FROM names WHERE id NOT IN ({});".format(
-            ", ".join("?" * len(names_to_keep.keys()))
+        query = "DELETE FROM riot_ids WHERE puuid NOT IN ({});".format(
+            ", ".join("?" * len(riot_ids.keys()))
         )
-        self.execute_query(query, tuple(names_to_keep.keys()))
-        query = "SELECT * FROM names;"
+        self.execute_query(query, tuple(riot_ids.keys()))
+        query = "SELECT * FROM riot_ids;"
         final_number_players = self.execute_query(query)
-        if len(final_number_players) != len(names_to_keep.keys()):
+        if len(final_number_players) != len(riot_ids.keys()):
             logger.error(
-                "Final number of player names in the database is not as expected after purge"
+                "Final number of riot ids in the database is not as expected after purge"
             )
             return
         logger.info(
-            f"Names have been correctly purged, leaving {len(names_to_keep.keys())} players"
+            f"Riot ids have been correctly purged, leaving {len(riot_ids.keys())}"
         )
         # Update the names of the players that are being kept
-        for id in names_to_keep:
-            query = "UPDATE names SET name=? WHERE id=?;"
-            self.execute_query(query, (names_to_keep[id], id))
+        for puuid in riot_ids:
+            query = "UPDATE riot_ids SET game_name=? WHERE puuid=?;"
+            self.execute_query(query, (riot_ids[puuid][0], puuid))
+            query = "UPDATE riot_ids SET tag_line=? WHERE puuid=?;"
+            self.execute_query(query, (riot_ids[puuid][1], puuid))
+
+    def get_summoner_ids(self):
+        logger.info("Getting summoner ids")
+        result = self.execute_query("SELECT * FROM summoner_ids;")
+        # Convert to a dictionary
+        summoner_ids = {}
+        for element in result:
+            summoner_ids[element[0]] = element[1]
+        if len(summoner_ids) == 0:
+            logger.info("No summoner ids present in the database")
+        return summoner_ids
+
+    def add_summoner_id(self, puuid, summoner_id):
+        logger.info(
+            f"Adding summoner id {summoner_id} of player {puuid} to the database"
+        )
+        self.execute_query(
+            "INSERT INTO summoner_ids (puuid, summoner_id) VALUES (?, ?);",
+            (puuid, summoner_id),
+        )
+
+    # Purges all the names from the database, except some that we need to keep
+    def set_summoner_ids(self, summoner_ids):
+        # Perform query into the database to delete the items we do not want
+        query = "DELETE FROM summoner_ids WHERE puuid NOT IN ({});".format(
+            ", ".join("?" * len(summoner_ids.keys()))
+        )
+        self.execute_query(query, tuple(summoner_ids.keys()))
+        query = "SELECT * FROM summoner_ids;"
+        final_number_players = self.execute_query(query)
+        if len(final_number_players) != len(summoner_ids.keys()):
+            logger.error(
+                "Final number of summoner ids in the database is not as expected after purge"
+            )
+            return
+        logger.info(
+            f"Summoner ids have been correctly purged, leaving {len(summoner_ids.keys())}"
+        )
+        # Update the names of the players that are being kept
+        for puuid in summoner_ids:
+            query = "UPDATE summoner_ids SET summoner_id=? WHERE puuid=?;"
+            self.execute_query(query, (summoner_ids[puuid], puuid))
 
     # Get the current version of the patch
     def get_version(self):

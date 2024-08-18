@@ -119,7 +119,7 @@ def create_help_message():
     return Message(None, embed)
 
 
-def in_game_message(player_id, player_name, active_game_info):
+def in_game_message(puuid, player_name, active_game_info):
     embed = discord.Embed(
         title=f"Player {player_name} is in game",
         description=f"Time elapsed: {active_game_info.game_length_minutes} minutes",
@@ -129,7 +129,7 @@ def in_game_message(player_id, player_name, active_game_info):
     player_team_id = None
     for team_id in active_game_info.teams:
         for participant in active_game_info.teams[team_id]:
-            if participant.player_id == player_id:
+            if participant.puuid == puuid:
                 player_team_id = team_id
                 break
         else:

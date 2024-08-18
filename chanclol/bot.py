@@ -1,6 +1,6 @@
 from riotapi import RiotApi
 import asyncio
-import parsing
+import parser
 import discord
 import message_formatter
 from database import Database
@@ -16,9 +16,9 @@ logger = logging.getLogger(__name__)
 class Player:
     # A unique player registered by the bot
 
-    def __init__(self, id):
-        # Id of the player. Corresponds to the encrypted summoner id in riot API
-        self.id = id
+    def __init__(self, puuid):
+        # Id of the player
+        self.puuid = puuid
         # Create a stopwatch that will keep track of the last time the in game status was checked
         # for this player
         self.stopwatch = StopWatch()
@@ -66,7 +66,7 @@ class Bot:
 
     def __init__(self, client, riot_api_key, config):
         # Riot API class
-        self.riot_api = RiotApi(riot_api_key, config)
+        self.riot_api = RiotApi(riot_api_key, config["restrictions"])
         # Keep a copy of the client
         self.client = client
         # Create the database
@@ -122,110 +122,139 @@ class Bot:
 
         # Parse the input provided and call the appropriate function
         logger.debug(f"Message received: {message.content}")
-        parsed_input = parsing.Parser(message.content)
-        if parsed_input.code == parsing.ParseResult.NOT_BOT_PREFIX:
-            logger.debug("Rejecting message not intended for the bot")
-        elif parsed_input.code != parsing.ParseResult.OK:
-            logger.info(f"Wrong input: {message.content}")
-            syntax_error_string = parsed_input.get_error_string()
-            logger.info(f"Reason: {syntax_error_string}")
-            response = message_formatter.input_not_valid(syntax_error_string)
-            await message.channel.send(content=response.content, embed=response.embed)
-        else:
-            logger.info(f"Command understood: {message.content}")
-            if parsed_input.command == parsing.Command.REGISTER:
-                responses = await self.register(" ".join(parsed_input.arguments), guild)
-            elif parsed_input.command == parsing.Command.UNREGISTER:
-                responses = await self.unregister(
-                    " ".join(parsed_input.arguments), guild
+        parsed_input = parser.Parser(message.content)
+        match parsed_input.code:
+            case parser.ParseResult.NO_BOT_PREFIX:
+                logger.debug("Rejecting message not intended for the bot")
+            case parser.ParseResult.OK:
+                logger.info(f"Command understood: {message.content}")
+                match parsed_input.command:
+                    case parser.Command.REGISTER:
+                        responses = await self.register(parsed_input.arguments, guild)
+                    case parser.Command.UNREGISTER:
+                        responses = await self.unregister(parsed_input.arguments, guild)
+                    case parser.Command.PRINT:
+                        responses = await self.print(guild)
+                    case parser.Command.CHANNEL:
+                        responses = await self.channel(parsed_input.arguments, guild)
+                    case parser.Command.HELP:
+                        responses = [message_formatter.create_help_message()]
+                    case parser.Command.RANK:
+                        responses = await self.rank(parsed_input.arguments)
+                    case _:
+                        raise ValueError("Command is not one of the possible ones")
+                for response in responses:
+                    await message.channel.send(
+                        content=response.content, embed=response.embed
+                    )
+            case _:
+                error_message = parsed_input.message
+                logger.info(
+                    f"Wrong input: '{message.content}'. Reason: {error_message}"
                 )
-            elif parsed_input.command == parsing.Command.PRINT:
-                responses = await self.print(guild)
-            elif parsed_input.command == parsing.Command.CHANNEL:
-                responses = await self.channel(" ".join(parsed_input.arguments), guild)
-            elif parsed_input.command == parsing.Command.HELP:
-                responses = [message_formatter.create_help_message()]
-            elif parsed_input.command == parsing.Command.RANK:
-                responses = await self.rank(" ".join(parsed_input.arguments))
-            else:
-                raise ValueError("Command is not one of the possible ones")
-            for response in responses:
+                response = message_formatter.input_not_valid(error_message)
                 await message.channel.send(
                     content=response.content, embed=response.embed
                 )
 
     # Register the provided player in the provided guild, if possible
-    async def register(self, player_name, guild):
+    async def register(self, riot_id, guild):
 
-        # Get the player's id
-        player_id = await self.riot_api.get_player_id(player_name)
-        if player_id == None:
-            logger.info(f"Riot has not provided an id for player {player_name}")
-            return [message_formatter.no_response_riot_api(player_name)]
+        riot_id_string = self.riot_api.print_riot_id(riot_id)
+
+        # Get the puuid
+        puuid = await self.riot_api.get_puuid(riot_id)
+        if not puuid:
+            logger.info(f"Riot has not provided a puuid for player {riot_id_string}")
+            return [message_formatter.no_response_riot_api(riot_id_string)]
 
         # Check if the player already belongs to the guild
-        if player_id in guild.last_informed_game_ids:
-            logger.info(f"Player {player_name} is already registered")
-            return [message_formatter.player_already_registered(player_name)]
+        if puuid in guild.last_informed_game_ids:
+            logger.info(f"Player {riot_id_string} is already registered")
+            return [message_formatter.player_already_registered(riot_id_string)]
 
         # Get rank info for this player
-        league_info = await self.riot_api.get_league_info(player_id)
-        if league_info == None:
+        league = await self.riot_api.get_league(puuid)
+        if not league:
             logger.info(
-                f"Could not get rank info from Riot API for player {player_name}"
+                f"Could not get rank info from Riot API for player {riot_id_string}"
             )
-            return [message_formatter.no_response_riot_api(player_name)]
+            return [message_formatter.no_response_riot_api(riot_id_string)]
 
         # Now it's safe to register the player
-        logger.info(f"Registering player {player_name}")
+        logger.info(f"Registering player {riot_id_string}")
         # Add it to the list of players if necessary
-        if not player_id in self.players:
-            self.players[player_id] = Player(player_id)
-            self.players[player_id].stopwatch.set_timeout(
-                self.timeout_offline_secs * 1000
-            )
+        if not puuid in self.players:
+            self.players[puuid] = Player(puuid)
+            self.players[puuid].stopwatch.set_timeout(self.timeout_offline_secs * 1000)
         # Add to the guild
-        guild.last_informed_game_ids[player_id] = None
+        guild.last_informed_game_ids[puuid] = None
         # Add to the database
-        self.database.add_player_to_guild(player_id, guild.id)
+        self.database.add_player_to_guild(puuid, guild.id)
 
         # Send a final message
-        logger.info(f"Player {player_name} has been registered")
+        logger.info(f"Player {riot_id_string} has been registered")
         return [
-            message_formatter.player_registered(player_name),
-            message_formatter.player_rank(player_name, league_info),
+            message_formatter.player_registered(riot_id_string),
+            message_formatter.player_rank(riot_id_string, league),
         ]
 
     # Unregister a player from the guild
-    async def unregister(self, player_name, guild):
+    async def unregister(self, riot_id, guild):
 
-        # Get the player's id
-        player_id = await self.riot_api.get_player_id(player_name)
-        if player_id == None:
-            logger.info(f"Riot has not provided an id for player {player_name}")
-            return [message_formatter.no_response_riot_api(player_name)]
+        riot_id_string = self.riot_api.print_riot_id(riot_id)
+
+        # Get the puuid
+        puuid = await self.riot_api.get_puuid(riot_id_string)
+        if puuid == None:
+            logger.info(f"Riot has not provided an id for player {riot_id_string}")
+            return [message_formatter.no_response_riot_api(riot_id_string)]
 
         # Check if the player was registered in the guild
-        if player_id in guild.last_informed_game_ids:
-            logger.info(f"Unregistering player {player_name} from guild {guild.id}")
-            del guild.last_informed_game_ids[player_id]
+        if puuid in guild.last_informed_game_ids:
+            logger.info(f"Unregistering player {riot_id_string} from guild {guild.id}")
+            del guild.last_informed_game_ids[puuid]
             # Remove from the database
-            self.database.remove_player_from_guild(player_id, guild.id)
-            logger.info(f"Player {player_name} has been unregistered")
+            self.database.remove_player_from_guild(puuid, guild.id)
+            logger.info(f"Player {riot_id_string} has been unregistered")
             # See if the player is in any other guild. If not, remove it completely
-            guild_ids = self.get_guild_ids(player_id)
+            guild_ids = self.get_guild_ids(puuid)
             if len(guild_ids) == 0:
-                logger.info(f"Player {player_name} will be completely removed")
-                del self.players[player_id]
-            return [message_formatter.player_unregistered_correctly(player_name)]
+                logger.info(f"Player {riot_id_string} will be completely removed")
+                del self.players[puuid]
+            return [message_formatter.player_unregistered_correctly(riot_id_string)]
         else:
             logger.info(
-                f"Player {player_name} was not previously registered in this guild"
+                f"Player {riot_id_string} was not previously registered in this guild"
             )
-            return [message_formatter.player_not_previously_registered(player_name)]
+            return [message_formatter.player_not_previously_registered(riot_id_string)]
+
+    # Print the rank of a player, if it exists
+    async def rank(self, riot_id):
+
+        riot_id_string = self.riot_api.print_riot_id(riot_id)
+
+        # Get the puuid
+        puuid = await self.riot_api.get_puuid(riot_id_string)
+        if not puuid:
+            logger.info(f"Riot has not provided an id for player {riot_id_string}")
+            return [message_formatter.no_response_riot_api(riot_id_string)]
+
+        # Get rank info for this player
+        league = await self.riot_api.get_league(puuid)
+        if not league:
+            logger.info(
+                f"Could not get rank info from Riot API for player {riot_id_string}"
+            )
+            return [message_formatter.no_response_riot_api(riot_id_string)]
+
+        # Send a final message
+        logger.info(f"Sending rank of player {riot_id_string}")
+        return [message_formatter.player_rank(riot_id_string, league)]
 
     # Change the channel where the in-game messages will be sent to
     async def channel(self, new_channel_name, guild):
+
         discord_guild = self.client.get_guild(guild.id)
         # First make sure the channel does exist in the guild
         channel = discord.utils.get(discord_guild.channels, name=new_channel_name)
@@ -243,6 +272,9 @@ class Bot:
 
     # Print the players currently registered in the provided guild
     async def print(self, guild):
+
+        # Very bad error if I cannot find the name of the channel to which
+        # I am sending the messages
         channel_name = self.client.get_channel(guild.channel_id).name
         if channel_name == None:
             raise ValueError(
@@ -255,37 +287,18 @@ class Bot:
         ]
         return [message_formatter.print_config(names, channel_name)]
 
-    # Print the rank of a player, if it exists
-    async def rank(self, player_name):
-
-        # Get the player's id
-        player_id = await self.riot_api.get_player_id(player_name)
-        if player_id == None:
-            logger.info(f"Riot has not provided an id for player {player_name}")
-            return [message_formatter.no_response_riot_api(player_name)]
-
-        # Get rank info for this player
-        league_info = await self.riot_api.get_league_info(player_id)
-        if league_info == None:
-            logger.info(
-                f"Could not get rank info from Riot API for player {player_name}"
-            )
-            return [message_formatter.no_response_riot_api(player_name)]
-
-        # Send a final message
-        logger.info(f"Sending rank of player {player_name}")
-        return [message_formatter.player_rank(player_name, league_info)]
-
     # Get a list of all the guild ids where the player is registered
-    def get_guild_ids(self, player_id):
+    def get_guild_ids(self, puuid):
+
         guild_ids = []
         for guild in self.guilds.values():
-            if player_id in guild.last_informed_game_ids:
+            if puuid in guild.last_informed_game_ids:
                 guild_ids.append(guild.id)
         return guild_ids
 
     # Main loop of the application
     async def loop_check_games(self):
+
         while True:
             # TODO: investigate if this wait time needs to be updated according to the number of users registered
             await asyncio.sleep(self.main_loop_cycle_secs)
@@ -294,65 +307,61 @@ class Bot:
             # Decide if the patch version needs to be updated
             await self.check_patch_version_executor.execute()
             # Find a player to check in this iteration
-            player_id = await self.select_player_to_check()
-            if player_id == None:
+            puuid = await self.select_player_to_check()
+            if not puuid:
                 continue
-            player_name = await self.riot_api.get_player_name(player_id)
+            riot_id = self.riot_api.print_riot_id(
+                await self.riot_api.get_riot_id(puuid)
+            )
             # We have a player to check
-            logger.debug(f"Checking in game status of player {player_name}")
+            logger.debug(f"Checking in game status of player {riot_id}")
             # Make a request to Riot to check if the player is in game
-            active_game_info = await self.riot_api.get_active_game_info(player_id)
-            if not active_game_info:
-                logger.warning(
-                    f"In-game data for player {player_name} is not available"
-                )
-                continue
+            spectator = await self.riot_api.get_spectator(puuid)
             # At this point the request has been made in some form, so reset the stopwatch
-            self.players[player_id].stopwatch.start()
-            # Now check in game status
-            if not active_game_info.in_game:
-                logger.debug(f"Player {player_name} is currently not in game")
+            self.players[puuid].stopwatch.start()
+            if not spectator:
+                logger.debug(f"Live data for player {riot_id} is not available")
                 # Player is offline, update the timeout if needed
-                if self.players[player_id].update_check_timeout(
+                if self.players[puuid].update_check_timeout(
                     False,
                     self.offline_threshold_mins,
                     self.timeout_online_secs,
                     self.timeout_offline_secs,
                 ):
-                    logger.info(f"Player {player_name} is now offline")
+                    logger.info(f"Player {riot_id} is now offline")
                 continue
             # Player is online, update the timeout if needed
-            if self.players[player_id].update_check_timeout(
+            if self.players[puuid].update_check_timeout(
                 True,
                 self.offline_threshold_mins,
                 self.timeout_online_secs,
                 self.timeout_offline_secs,
             ):
-                logger.info(f"Player {player_name} is now online")
+                logger.info(f"Player {riot_id} is now online")
             # Get the guilds where this player is registered
-            guild_ids_player = self.get_guild_ids(player_id)
+            guild_ids_player = self.get_guild_ids(puuid)
             for guild_id in guild_ids_player:
                 guild = self.guilds[guild_id]
                 # Get the last game that was informed for this player in this guild
-                last_informed_game_id = guild.last_informed_game_ids[player_id]
-                if last_informed_game_id == active_game_info.game_id:
+                last_informed_game_id = guild.last_informed_game_ids[puuid]
+                if last_informed_game_id == spectator.game_id:
                     logger.debug(
-                        f"Message for player {player_name} in guild {guild_id} for this game was already sent"
+                        f"Message for player {riot_id} in guild {guild_id} for this game was already sent"
                     )
                 else:
                     logger.info(
-                        f"Player {player_name} is in game and a message has to be sent to guild {guild_id}"
+                        f"Player {riot_id} is in game and a message has to be sent to guild {guild_id}"
                     )
                     # Create the complete response
                     message = message_formatter.in_game_message(
-                        player_id, player_name, active_game_info
+                        puuid, riot_id, spectator
                     )
                     await self.send_message(message, guild.channel_id)
                     # Update the last informed game_id
                     logger.info("Updating last informed game id")
-                    guild.last_informed_game_ids[player_id] = active_game_info.game_id
+                    guild.last_informed_game_ids[puuid] = spectator.game_id
                     self.database.set_last_informed_game_id(
-                        player_id, guild.id, active_game_info.game_id
+                        puuid, guild.id, spectator.game_id
                     )
 
     # Send the provided message in the provided channel id, if it exists
@@ -370,7 +379,7 @@ class Bot:
         # Create the list of player ids we want to keep
         player_ids_to_keep = self.players.keys()
         # Perform the purge in the riot API and in the database
-        await self.riot_api.purge_names(player_ids_to_keep)
+        await self.riot_api.purge(player_ids_to_keep)
 
     # Calls riot API to update the patch version
     async def check_patch_version(self):
@@ -379,34 +388,33 @@ class Bot:
 
     # Select the best player to check the in game status in this iteration
     async def select_player_to_check(self):
+
         player_to_check = None
         best_time_behind = -math.inf
         for player in self.players.values():
             time_behind = player.stopwatch.time_behind()
+            riot_id = self.riot_api.print_riot_id(
+                await self.riot_api.get_riot_id(player.puuid)
+            )
             if time_behind > 0:
                 if time_behind > best_time_behind:
                     # This player is available to be checked, and is more behind than the best,
                     # so it is the new best
-                    logger.debug(
-                        f"Player {await self.riot_api.get_player_name(player.id)} is more behind"
-                    )
+                    logger.debug(f"Player {riot_id} is more behind")
                     best_time_behind = time_behind
                     player_to_check = player
                 else:
                     # This player is available to check, but is less behind than the current best
-                    logger.debug(
-                        f"Rejecting player {await self.riot_api.get_player_name(player.id)} as it is less behind"
-                    )
+                    logger.debug(f"Rejecting player {riot_id} as it is less behind")
             else:
-                logger.debug(
-                    f"Timeout still not reached for player {await self.riot_api.get_player_name(player.id)}"
-                )
+                logger.debug(f"Timeout still not reached for player {riot_id}")
         # Here we in principle have selected the best option to check
         if player_to_check == None:
             logger.debug("Not checking any player during this iteration")
             return None
         else:
-            logger.debug(
-                f"Selecting player {await self.riot_api.get_player_name(player_to_check.id)} to be checked"
+            riot_id_to_check = self.riot_api.print_riot_id(
+                await self.riot_api.get_riot_id(player_to_check.puuid)
             )
-            return player_to_check.id
+            logger.debug(f"Selecting player {riot_id_to_check} to be checked")
+            return player_to_check.puuid

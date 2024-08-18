@@ -58,7 +58,13 @@ class RateLimiter:
     # Create a rate limiter with certain restrictions. Then you can use it to know
     # if you're allowed to make a request
     def __init__(self, restrictions):
-        self.restrictions = restrictions
+        self.restrictions = []
+        for restriction in restrictions:
+            self.restrictions.append(
+                Restriction(
+                    restriction["num_requests"], restriction["interval_seconds"] * 1000
+                )
+            )
         self.history = []
         self.max_interval = -math.inf
         for restriction in self.restrictions:

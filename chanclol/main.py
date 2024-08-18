@@ -31,7 +31,8 @@ logging.getLogger().setLevel(level)
 logger = logging.getLogger(__name__)
 
 # Load env variables
-load_dotenv()
+# (From the documentation: "By default, load_dotenv doesn't override existing environment variables.")
+load_dotenv(override=True)
 riot_api_key = os.getenv("RIOT_API_KEY")
 if riot_api_key == None:
     raise ValueError("RIOT_API_KEY has not been found in the environment")
