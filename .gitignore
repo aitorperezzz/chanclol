@@ -1,9 +1,6 @@
 .vscode/
 __pycache__/
 .env
+.venv
 *.db
 *.log
-bin
-include
-lib
-lib64
