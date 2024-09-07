@@ -1,10 +1,7 @@
 .vscode/
 __pycache__/
 .env
+.venv
 *.db
 *.log
 .git/
-bin
-include
-lib
-lib64
