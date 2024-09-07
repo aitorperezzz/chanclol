@@ -29,9 +29,9 @@ class ParseResult(Enum):
 
 error_messages = {
     ParseResult.NO_COMMAND: "No command provided",
-    ParseResult.COMMAND_NOT_RECOGNISED: "Command '{command}' not recognised",
-    ParseResult.NO_INPUT: "Command '{command}' requires an argument",
-    ParseResult.NOT_A_RIOT_ID: "Input '{word}' is not a riot id",
+    ParseResult.COMMAND_NOT_RECOGNISED: "Command `{command}` not recognised",
+    ParseResult.NO_INPUT: "Command `{command}` requires an argument",
+    ParseResult.NOT_A_RIOT_ID: "Input `{word}` is not a riot id",
 }
 
 
@@ -118,3 +118,4 @@ class Parser:
                     self.parse_riot_id(words)
             case _:
                 self.code = ParseResult.COMMAND_NOT_RECOGNISED
+                self.message = error_messages[self.code].format(command=command)

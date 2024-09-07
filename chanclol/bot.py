@@ -1,102 +1,65 @@
-from riotapi import RiotApi
 import asyncio
-import parser
 import discord
-import message_formatter
-from database import Database
 import logging
-import time
 import math
-from stopwatch import StopWatch
+
+from riotapi import RiotApi
+import parser
+import message_formatter
+from database_bot import DatabaseBot
 from timed_executor import TimedExecutor
+from guild import Guild
+from player import Player
 
 logger = logging.getLogger(__name__)
 
 
-class Player:
-    # A unique player registered by the bot
-
-    def __init__(self, puuid):
-        # Id of the player
-        self.puuid = puuid
-        # Create a stopwatch that will keep track of the last time the in game status was checked
-        # for this player
-        self.stopwatch = StopWatch()
-        # Last time the player was seen online
-        self.last_online_secs = -math.inf
-
-    # Updates the internal stopwatch of the player according to the online status and the time elapsed
-    # Return True if the timeout has actually been changed, False if not
-    def update_check_timeout(
-        self, online, offline_threshold_mins, timeout_online_secs, timeout_offline_secs
-    ):
-        current_time = time.time()
-        # If the player is currently online, set the timeout to online
-        if online:
-            self.last_online_secs = current_time
-            if self.stopwatch.get_timeout() != timeout_online_secs * 1000:
-                self.stopwatch.set_timeout(timeout_online_secs * 1000)
-                return True
-        # If not online, we need to know how long the player has been offline
-        else:
-            if current_time - self.last_online_secs > offline_threshold_mins * 60:
-                if self.stopwatch.get_timeout() != timeout_offline_secs * 1000:
-                    self.stopwatch.set_timeout(timeout_offline_secs * 1000)
-                    return True
-        return False
-
-
-class Guild:
-    # Any guild where this bot has been invited
-
-    def __init__(self, id, channel_id):
-        # Unique identifier of the guild as handled by discord
-        self.id = id
-        # Id of the channel where the bot will send in-game messages
-        self.channel_id = channel_id
-        # Players registered in this guild together with the game id
-        # that was last informed for them in this guild
-        self.last_informed_game_ids = {}
-
-
+# The bot: receives commands from the discord client
+# and processes them. It runs an infinite loop that checks the
+# in-game status of all the players registered for each guild
 class Bot:
-    # The bot: receives commands from the discord client
-    # and processes them. It runs an infinite loop that checks the
-    # in-game status of all the players registered for each guild
 
-    def __init__(self, client, riot_api_key, config):
-        # Riot API class
-        self.riot_api = RiotApi(riot_api_key, config["restrictions"])
+    def __init__(
+        self,
+        client,
+        database_filename_bot: str,
+        offline_threshold_mins: int,
+        timeout_online_secs: int,
+        timeout_offline_secs: int,
+        main_loop_cycle_secs: int,
+        riotapi_housekeeping_cycle_hrs: int,
+        riotapi_key: str,
+        database_filename_riotapi: str,
+        restrictions: list[dict],
+    ):
+
         # Keep a copy of the client
         self.client = client
         # Create the database
-        self.database = Database(config["database_filename"])
-        # Initialise the riot API with possible contents inside the database
-        self.riot_api.set_database(self.database)
-        # Initialise the guilds and the players from the database, if present
+        self.database = DatabaseBot(database_filename_bot)
+        # Initialise guilds and players from the database, if any
         self.guilds = self.database.get_guilds()
         self.players = self.database.get_players()
-        # The bot will execute a function to purge player names, after a configurable time
-        self.purge_names_executor = TimedExecutor(
-            config["timeout_purge_names_hrs"] * 60 * 60 * 1000, self.purge_names
-        )
-        # The bot will check the version of the riot API from time to time
-        self.check_patch_version_executor = TimedExecutor(
-            config["timeout_check_patch_version_hrs"] * 60 * 60 * 1000,
-            self.check_patch_version,
+        # The bot executes a function by which it tells the riot API
+        # which of the player ids to keep, so that the others can be purged
+        self.riotapi_housekeeping_executor = TimedExecutor(
+            riotapi_housekeeping_cycle_hrs * 60 * 60 * 1000, self.riotapi_housekeeping
         )
         # Timeouts for online and offline players
-        self.offline_threshold_mins = config["offline_threshold_mins"]
-        self.timeout_online_secs = config["timeout_online_secs"]
-        self.timeout_offline_secs = config["timeout_offline_secs"]
+        self.offline_threshold_mins = offline_threshold_mins
+        self.timeout_online_secs = timeout_online_secs
+        self.timeout_offline_secs = timeout_offline_secs
         # Set default offline timeouts for all players
         for player in self.players.values():
             player.stopwatch.set_timeout(self.timeout_offline_secs * 1000)
         # Main loop cycle
-        self.main_loop_cycle_secs = config["main_loop_cycle_secs"]
+        self.main_loop_cycle_secs = main_loop_cycle_secs
+        # Riot API
+        self.riot_api = RiotApi(riotapi_key, database_filename_riotapi, restrictions)
 
     # Main entry point for all messages
     async def receive(self, message):
+
         # Reject my own messages
         if message.author == self.client.user:
             logger.debug("Rejecting message sent by myself")
@@ -158,7 +121,7 @@ class Bot:
                 )
 
     # Register the provided player in the provided guild, if possible
-    async def register(self, riot_id, guild):
+    async def register(self, riot_id: tuple[str], guild: Guild) -> list[str]:
 
         riot_id_string = self.riot_api.print_riot_id(riot_id)
 
@@ -176,10 +139,7 @@ class Bot:
         # Get rank info for this player
         league = await self.riot_api.get_league(puuid)
         if not league:
-            logger.info(
-                f"Could not get rank info from Riot API for player {riot_id_string}"
-            )
-            return [message_formatter.no_response_riot_api(riot_id_string)]
+            logger.info(f"Could not get rank from Riot API for player {riot_id_string}")
 
         # Now it's safe to register the player
         logger.info(f"Registering player {riot_id_string}")
@@ -200,12 +160,12 @@ class Bot:
         ]
 
     # Unregister a player from the guild
-    async def unregister(self, riot_id, guild):
+    async def unregister(self, riot_id: tuple[str], guild: Guild) -> list[str]:
 
         riot_id_string = self.riot_api.print_riot_id(riot_id)
 
         # Get the puuid
-        puuid = await self.riot_api.get_puuid(riot_id_string)
+        puuid = await self.riot_api.get_puuid(riot_id)
         if puuid == None:
             logger.info(f"Riot has not provided an id for player {riot_id_string}")
             return [message_formatter.no_response_riot_api(riot_id_string)]
@@ -230,12 +190,12 @@ class Bot:
             return [message_formatter.player_not_previously_registered(riot_id_string)]
 
     # Print the rank of a player, if it exists
-    async def rank(self, riot_id):
+    async def rank(self, riot_id: tuple[str]) -> list[str]:
 
         riot_id_string = self.riot_api.print_riot_id(riot_id)
 
         # Get the puuid
-        puuid = await self.riot_api.get_puuid(riot_id_string)
+        puuid = await self.riot_api.get_puuid(riot_id)
         if not puuid:
             logger.info(f"Riot has not provided an id for player {riot_id_string}")
             return [message_formatter.no_response_riot_api(riot_id_string)]
@@ -253,7 +213,7 @@ class Bot:
         return [message_formatter.player_rank(riot_id_string, league)]
 
     # Change the channel where the in-game messages will be sent to
-    async def channel(self, new_channel_name, guild):
+    async def channel(self, new_channel_name: str, guild: Guild) -> list[str]:
 
         discord_guild = self.client.get_guild(guild.id)
         # First make sure the channel does exist in the guild
@@ -271,7 +231,7 @@ class Bot:
             return [message_formatter.channel_changed(new_channel_name)]
 
     # Print the players currently registered in the provided guild
-    async def print(self, guild):
+    async def print(self, guild: Guild) -> list[str]:
 
         # Very bad error if I cannot find the name of the channel to which
         # I am sending the messages
@@ -282,13 +242,13 @@ class Bot:
             )
         # Create list of player names in this guild
         names = [
-            await self.riot_api.get_player_name(id)
-            for id in guild.last_informed_game_ids
+            self.riot_api.print_riot_id(await self.riot_api.get_riot_id(puuid))
+            for puuid in guild.last_informed_game_ids
         ]
         return [message_formatter.print_config(names, channel_name)]
 
     # Get a list of all the guild ids where the player is registered
-    def get_guild_ids(self, puuid):
+    def get_guild_ids(self, puuid: str) -> list[str]:
 
         guild_ids = []
         for guild in self.guilds.values():
@@ -297,15 +257,13 @@ class Bot:
         return guild_ids
 
     # Main loop of the application
-    async def loop_check_games(self):
+    async def loop(self):
 
         while True:
             # TODO: investigate if this wait time needs to be updated according to the number of users registered
             await asyncio.sleep(self.main_loop_cycle_secs)
-            # Decide if the player names need to be purged
-            await self.purge_names_executor.execute()
-            # Decide if the patch version needs to be updated
-            await self.check_patch_version_executor.execute()
+            # Perform housekeeping of the riot API if necessary
+            await self.riotapi_housekeeping_executor.execute()
             # Find a player to check in this iteration
             puuid = await self.select_player_to_check()
             if not puuid:
@@ -320,7 +278,7 @@ class Bot:
             # At this point the request has been made in some form, so reset the stopwatch
             self.players[puuid].stopwatch.start()
             if not spectator:
-                logger.debug(f"Live data for player {riot_id} is not available")
+                logger.debug(f"Spectator data for player {riot_id} is not available")
                 # Player is offline, update the timeout if needed
                 if self.players[puuid].update_check_timeout(
                     False,
@@ -365,7 +323,8 @@ class Bot:
                     )
 
     # Send the provided message in the provided channel id, if it exists
-    async def send_message(self, message, channel_id):
+    async def send_message(self, message, channel_id: str) -> None:
+
         # Get the channel from channel id
         channel = self.client.get_channel(channel_id)
         if channel == None:
@@ -373,28 +332,27 @@ class Bot:
         else:
             await channel.send(content=message.content, embed=message.embed)
 
-    # Purge names in the riot API and in the database
-    async def purge_names(self):
-        logger.info("Purging player names")
+    # Perform housekeeping tasks on the Riot API
+    async def riotapi_housekeeping(self) -> None:
+
+        logger.info("Riot API housekeeping")
         # Create the list of player ids we want to keep
         player_ids_to_keep = self.players.keys()
-        # Perform the purge in the riot API and in the database
-        await self.riot_api.purge(player_ids_to_keep)
+        # Perform housekeeping in the Riot API
+        await self.riot_api.housekeeping(player_ids_to_keep)
 
-    # Calls riot API to update the patch version
-    async def check_patch_version(self):
-        logger.info("Checking patch version")
-        await self.riot_api.check_patch_version()
-
-    # Select the best player to check the in game status in this iteration
-    async def select_player_to_check(self):
+    # Select the player for which we will request the spectator data
+    # As a rule of thumb, it will be the player for which we have not had this data
+    # for the longer time.
+    # Online players will be checked more frequently
+    async def select_player_to_check(self) -> str | None:
 
         player_to_check = None
         best_time_behind = -math.inf
         for player in self.players.values():
             time_behind = player.stopwatch.time_behind()
             riot_id = self.riot_api.print_riot_id(
-                await self.riot_api.get_riot_id(player.puuid)
+                await self.riot_api.get_riot_id(player.id)
             )
             if time_behind > 0:
                 if time_behind > best_time_behind:
@@ -414,7 +372,7 @@ class Bot:
             return None
         else:
             riot_id_to_check = self.riot_api.print_riot_id(
-                await self.riot_api.get_riot_id(player_to_check.puuid)
+                await self.riot_api.get_riot_id(player_to_check.id)
             )
             logger.debug(f"Selecting player {riot_id_to_check} to be checked")
-            return player_to_check.puuid
+            return player_to_check.id
