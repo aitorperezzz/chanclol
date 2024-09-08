@@ -18,7 +18,7 @@ class Command(Enum):
 
 # Possible results after parsing user input
 # from a syntax point of view
-class ParseResult(Enum):
+class Result(Enum):
     OK = auto()
     NO_BOT_PREFIX = auto()
     NO_COMMAND = auto()
@@ -27,48 +27,50 @@ class ParseResult(Enum):
     NOT_A_RIOT_ID = auto()
 
 
-error_messages = {
-    ParseResult.NO_COMMAND: "No command provided",
-    ParseResult.COMMAND_NOT_RECOGNISED: "Command `{command}` not recognised",
-    ParseResult.NO_INPUT: "Command `{command}` requires an argument",
-    ParseResult.NOT_A_RIOT_ID: "Input `{word}` is not a riot id",
+ERROR_MESSAGES = {
+    Result.NO_COMMAND: "No command provided",
+    Result.COMMAND_NOT_RECOGNISED: "Command `{command}` not recognised",
+    Result.NO_INPUT: "Command `{command}` requires an argument",
+    Result.NOT_A_RIOT_ID: "Input `{word}` is not a riot id",
 }
 
 
 class Parser:
+
     def __init__(self, message):
-        self.code = None
-        self.message = None
-        self.command = None
-        self.arguments = None
+
+        self.result: Result | None = None
+        self.error_message: str | None = None
+        self.command: Command | None = None
+        self.arguments: list[str] = []
         self.parse(message)
 
-    def parse_riot_id(self, words):
+    def parse_riot_id(self, words: list[str]) -> None:
 
         word = "".join(words)
         hashtag_pos = word.find("#")
         if hashtag_pos == -1:
-            self.code = ParseResult.NOT_A_RIOT_ID
-            self.message = error_messages[ParseResult.NOT_A_RIOT_ID].format(word=word)
+            self.code = Result.NOT_A_RIOT_ID
+            self.error_message = ERROR_MESSAGES[Result.NOT_A_RIOT_ID].format(word=word)
         else:
-            self.code = ParseResult.OK
+            self.code = Result.OK
             game_name = word[:hashtag_pos]
             tag_line = word[hashtag_pos + 1 :]
-            self.arguments = (game_name, tag_line)
+            self.arguments = [game_name, tag_line]
 
-    def parse(self, message):
+    def parse(self, message: str):
 
         # The message has to start with the bot prefix
         if not message.startswith(PREFIX):
             logger.debug("Rejecting message not intended for the bot")
-            self.code = ParseResult.NO_BOT_PREFIX
+            self.code = Result.NO_BOT_PREFIX
             return
 
         # Get the command if it exists
         words = message[len(PREFIX) :].strip(" \n\t").split()
         if len(words) == 0:
-            self.code = ParseResult.NO_COMMAND
-            self.message = error_messages[self.code]
+            self.code = Result.NO_COMMAND
+            self.error_message = ERROR_MESSAGES[self.code]
             return
         command = words[0]
         words = words[1:]
@@ -79,43 +81,51 @@ class Parser:
                 # chanclol register <riot_id>
                 self.command = Command.REGISTER
                 if len(words) == 0:
-                    self.code = ParseResult.NO_INPUT
-                    self.message = error_messages[self.code].format(command=command)
+                    self.code = Result.NO_INPUT
+                    self.error_message = ERROR_MESSAGES[self.code].format(
+                        command=command
+                    )
                 else:
                     self.parse_riot_id(words)
             case "unregister":
                 # chanclol unregister <riot_id>
                 self.command = Command.UNREGISTER
                 if len(words) == 0:
-                    self.code = ParseResult.NO_INPUT
-                    self.message = error_messages[self.code].format(command=command)
+                    self.code = Result.NO_INPUT
+                    self.error_message = ERROR_MESSAGES[self.code].format(
+                        command=command
+                    )
                 else:
                     self.parse_riot_id(words)
             case "print":
                 # chanclol print
                 self.command = Command.PRINT
-                self.code = ParseResult.OK
+                self.code = Result.OK
             case "channel":
                 # chanclol channel <channel_name>
                 self.command = Command.CHANNEL
                 if len(words) == 0:
-                    self.code = ParseResult.NO_INPUT
-                    self.message = error_messages[self.code].format(command=command)
+                    self.code = Result.NO_INPUT
+                    self.error_message = ERROR_MESSAGES[self.code].format(
+                        command=command
+                    )
                 else:
-                    self.code = ParseResult.OK
-                    self.arguments = " ".join(words)
+                    self.code = Result.OK
+                    self.arguments = [" ".join(words)]
             case "help":
                 # chanclol help
                 self.command = Command.HELP
-                self.code = ParseResult.OK
+                self.code = Result.OK
             case "rank":
                 # chanclol rank <riot_id>
                 self.command = Command.RANK
                 if len(words) == 0:
-                    self.code = ParseResult.NO_INPUT
-                    self.message = error_messages[self.code].format(command=command)
+                    self.code = Result.NO_INPUT
+                    self.error_message = ERROR_MESSAGES[self.code].format(
+                        command=command
+                    )
                 else:
                     self.parse_riot_id(words)
             case _:
-                self.code = ParseResult.COMMAND_NOT_RECOGNISED
-                self.message = error_messages[self.code].format(command=command)
+                self.code = Result.COMMAND_NOT_RECOGNISED
+                self.error_message = ERROR_MESSAGES[self.code].format(command=command)

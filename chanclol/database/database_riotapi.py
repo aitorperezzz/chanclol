@@ -1,6 +1,7 @@
 import logging
 
-from database import Database
+from database.database import Database
+from riot_id import RiotId
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +47,7 @@ class DatabaseRiotApi(Database):
 
     # Once the Riot API has downloaded the champions data, it will call this function
     # to store them
-    def set_champions(self, champions: dict) -> None:
+    def set_champions(self, champions: dict[int, str]) -> None:
         logger.info("Setting champions into the database")
         self.execute_query("DELETE FROM champions;")
         for id in champions:
@@ -59,7 +60,7 @@ class DatabaseRiotApi(Database):
             )
 
     # During initialisation, the Riot API will check if the database already has champions data
-    def get_champions(self) -> dict:
+    def get_champions(self) -> dict[int, str]:
 
         logger.info("Getting champions from the database")
         query = "SELECT * FROM champions;"
@@ -72,20 +73,20 @@ class DatabaseRiotApi(Database):
         return champions
 
     # Get all the riot ids as stored in the database
-    def get_riot_ids(self) -> dict:
+    def get_riot_ids(self) -> dict[str, RiotId]:
 
         logger.info("Getting riot ids")
         result = self.execute_query("SELECT * FROM riot_ids;")
         # Convert to a dictionary
         riot_ids = {}
         for element in result:
-            riot_ids[element[0]] = (element[1], element[2])
+            riot_ids[element[0]] = RiotId(element[1], element[2])
         if len(riot_ids) == 0:
             logger.info("No riot ids present in the database")
         return riot_ids
 
     # Purges all the names from the database, except some that we need to keep
-    def set_riot_ids(self, riot_ids: dict) -> None:
+    def set_riot_ids(self, riot_ids: dict[str, RiotId]) -> None:
 
         # Perform query into the database to delete the items we do not want
         query = "DELETE FROM riot_ids WHERE puuid NOT IN ({});".format(
@@ -105,20 +106,20 @@ class DatabaseRiotApi(Database):
         # Update the names of the players that are being kept
         for puuid in riot_ids:
             query = "UPDATE riot_ids SET game_name=? WHERE puuid=?;"
-            self.execute_query(query, (riot_ids[puuid][0], puuid))
+            self.execute_query(query, (riot_ids[puuid].game_name, puuid))
             query = "UPDATE riot_ids SET tag_line=? WHERE puuid=?;"
-            self.execute_query(query, (riot_ids[puuid][1], puuid))
+            self.execute_query(query, (riot_ids[puuid].tag_line, puuid))
 
     # Add a name to the database
-    def add_riot_id(self, puuid: str, riot_id: tuple[str]) -> None:
+    def add_riot_id(self, puuid: str, riot_id: RiotId) -> None:
 
         logger.info(f"Adding riot id {riot_id} of player {puuid} to the database")
         self.execute_query(
             "INSERT INTO riot_ids (puuid, game_name, tag_line) VALUES (?, ?, ?);",
-            (puuid, riot_id[0], riot_id[1]),
+            (puuid, riot_id.game_name, riot_id.tag_line),
         )
 
-    def get_summoner_ids(self) -> dict:
+    def get_summoner_ids(self) -> dict[str, str]:
 
         logger.info("Getting summoner ids")
         result = self.execute_query("SELECT * FROM summoner_ids;")
@@ -131,7 +132,7 @@ class DatabaseRiotApi(Database):
         return summoner_ids
 
     # Purges all the names from the database, except some that we need to keep
-    def set_summoner_ids(self, summoner_ids: dict) -> None:
+    def set_summoner_ids(self, summoner_ids: dict[str, str]) -> None:
 
         # Perform query into the database to delete the items we do not want
         query = "DELETE FROM summoner_ids WHERE puuid NOT IN ({});".format(

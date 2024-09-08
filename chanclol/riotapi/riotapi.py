@@ -1,8 +1,11 @@
 import logging
-import time
 
-import proxy
-from database_riotapi import DatabaseRiotApi
+import riotapi.proxy as proxy
+from database.database_riotapi import DatabaseRiotApi
+from riot_id import RiotId
+from riotapi.league import League
+from riotapi.spectator import Spectator
+from riotapi.mastery import Mastery
 
 logger = logging.getLogger(__name__)
 
@@ -28,131 +31,6 @@ ROUTE_CHAMPIONS = (
 )
 
 
-# Information returned, for a specific player and for a specific
-# queue, containing its current ranked position in that queue
-class League:
-
-    def __init__(self, data, queue_type):
-
-        self.queue_type = queue_type
-        self.tier = data["tier"]
-        self.rank = data["rank"]
-        self.lps = data["leaguePoints"]
-        self.wins = data["wins"]
-        self.losses = data["losses"]
-        total_games = self.wins + self.losses
-        self.win_rate = int(self.wins / (total_games) * 100) if total_games != 0 else 0
-
-    @classmethod
-    def create(cls, data):
-
-        if not data:
-            return None
-
-        result = []
-        for relevant_queue in RELEVANT_QUEUES:
-            for league_data in data:
-                if league_data["queueType"] == relevant_queue:
-                    league = cls(league_data, RELEVANT_QUEUES[relevant_queue])
-                    result.append(league)
-        return result
-
-
-# Information about the mastery of a player with a certain champion
-class Mastery:
-
-    def __init__(self, data):
-
-        # Mastery level
-        self.level = data["championLevel"]
-        # lastPlayTime is in Unix milliseconds
-        time_in_seconds = time.time()
-        self.days_since_last_played = round(
-            (time_in_seconds - data["lastPlayTime"] / 1000) / 3600 / 24
-        )
-
-    @classmethod
-    def create(cls, data):
-
-        return cls(data) if data else None
-
-
-# Information about a live game
-class Spectator:
-
-    def __init__(self):
-
-        self.game_id = None
-        self.game_mode = None
-        self.game_length_minutes = None
-        self.teams = {}
-
-    @classmethod
-    async def create(cls, data, riot_api):
-
-        if not data:
-            return None
-
-        spectator = cls()
-        spectator.game_id = data["gameId"]
-        spectator.game_mode = data["gameMode"]
-        spectator.game_length_minutes = round(data["gameLength"] / 60)
-        # Create the list of all the provided team ids
-        team_ids = list(
-            set([participant["teamId"] for participant in data["participants"]])
-        )
-        # Fill in the teams
-        for team_id in team_ids:
-            spectator.teams[team_id] = []
-            for participant_data in data["participants"]:
-                if participant_data["teamId"] == team_id:
-                    participant = await Participant.create(participant_data, riot_api)
-                    if not participant:
-                        logger.error(
-                            f"Could not create participant while preparing spectator data"
-                        )
-                        return None
-                    spectator.teams[team_id].append(participant)
-        return spectator
-
-
-# Information about a participant in a spectator (live) game
-class Participant:
-
-    def __init__(self):
-
-        self.puuid = None
-        self.riot_id_string = None
-        self.champion_name = None
-        self.mastery = None
-        self.league = None
-
-    @classmethod
-    async def create(cls, data, riot_api):
-
-        if not data:
-            return None
-
-        participant = cls()
-        # puuid
-        puuid = data["puuid"]
-        participant.puuid = puuid
-        # riot id
-        participant.riot_id_string = riot_api.print_riot_id(
-            await riot_api.get_riot_id(puuid)
-        )
-        # Champion name
-        champion_id = data["championId"]
-        participant.champion_name = await riot_api.get_champion_name(champion_id)
-        if not participant.champion_name:
-            return None
-        # Champion mastery
-        participant.mastery = await riot_api.get_mastery(puuid, champion_id)
-        # League
-        participant.league = await riot_api.get_league(puuid)
-        return participant
-
-
 class RiotApi:
 
     def __init__(
@@ -163,22 +41,22 @@ class RiotApi:
     ):
 
         # A database managed by this class to serve as cache
-        self.database = DatabaseRiotApi(database_filename)
+        self.database: DatabaseRiotApi = DatabaseRiotApi(database_filename)
         # Relation between champion ids and champion names
-        self.champions = self.database.get_champions()
+        self.champions: dict[int, str] = self.database.get_champions()
         # Relation between puuids and riot ids
-        self.riot_ids = self.database.get_riot_ids()
+        self.riot_ids: dict[str, RiotId] = self.database.get_riot_ids()
         # Relation between puuids and summoner ids
-        self.summoner_ids = self.database.get_summoner_ids()
+        self.summoner_ids: dict[str, str] = self.database.get_summoner_ids()
         # Version of the Riot patch
-        self.version = self.database.get_version()
+        self.version: str = self.database.get_version()
         # The proxy will handle the requests for me
-        self.proxy = proxy.Proxy(key, restrictions)
+        self.proxy: proxy.Proxy = proxy.Proxy(key, restrictions)
         # Cache for spectator data
-        self.spectator_cache = {}
+        self.spectator_cache: dict[int, Spectator] = {}
 
     # Return the puuid provided a riot id
-    async def get_puuid(self, riot_id: tuple[str]) -> str | None:
+    async def get_puuid(self, riot_id: RiotId) -> str | None:
 
         # Check if the puuid is cached
         for puuid in self.riot_ids:
@@ -187,30 +65,28 @@ class RiotApi:
 
         # Make a request if not
         url = RIOT_SCHEMA.format(routing="europe") + ROUTE_ACCOUNT_PUUID.format(
-            game_name=riot_id[0], tag_line=riot_id[1]
+            game_name=riot_id.game_name, tag_line=riot_id.tag_line
         )
         data = await self.request(url)
         if not data:
-            logger.debug(f"No puuid found for riot id {self.print_riot_id(riot_id)}")
+            logger.debug(f"No puuid found for riot id {riot_id}")
             return None
 
         # Keep a copy of the puuid for later
         puuid = data["puuid"]
         if puuid in self.riot_ids:
             logger.warning(
-                f"Puuid {puuid} corresponds to riot ids {self.print_riot_id(self.riot_ids[puuid])} and {self.print_riot_id(riot_id)}"
+                f"Puuid {puuid} corresponds to riot ids {self.riot_ids[puuid]} and {riot_id}"
             )
             logger.warning("Keeping the latter as it is more recent")
         else:
-            logger.debug(
-                f"Caching riot id {self.print_riot_id(riot_id)} for puuid {puuid}"
-            )
+            logger.debug(f"Caching riot id {riot_id} for puuid {puuid}")
         self.riot_ids[puuid] = riot_id
         self.database.add_riot_id(puuid, riot_id)
 
         return puuid
 
-    async def get_riot_id(self, puuid: str) -> tuple[str] | None:
+    async def get_riot_id(self, puuid: str) -> RiotId | None:
 
         # Check if cached
         if puuid in self.riot_ids:
@@ -224,7 +100,7 @@ class RiotApi:
         if not data:
             logger.error(f"Could not find riot id for puuid {puuid}")
             return None
-        riot_id = (data["gameName"], data["tagLine"])
+        riot_id = RiotId(data["gameName"], data["tagLine"])
 
         # Save for later
         self.riot_ids[puuid] = riot_id
@@ -263,12 +139,12 @@ class RiotApi:
     # Return all the League info for the provided summoner id.
     # The league info is a list of objects, one for each of the queues for which
     # the player has been placed. If the list is empty, the player is not placed.
-    async def get_league(self, puuid: str) -> list[League] | None:
+    async def get_leagues(self, puuid: str) -> list[League]:
 
         # First get the corresponding summoner id
         summoner_id = await self.get_summoner_id(puuid)
         if not puuid:
-            return None
+            return []
 
         url = RIOT_SCHEMA.format(routing="euw1") + ROUTE_LEAGUE.format(
             summoner_id=summoner_id
@@ -276,8 +152,16 @@ class RiotApi:
         data = await self.request(url)
         if not data:
             logger.info(f"No league data found for summoner id {summoner_id}")
+            return []
 
-        return League.create(data)
+        result = []
+        for relevant_queue in RELEVANT_QUEUES:
+            for league_data in data:
+                if league_data["queueType"] == relevant_queue:
+                    league = League.create(league_data, RELEVANT_QUEUES[relevant_queue])
+                    if league:
+                        result.append(league)
+        return result
 
     # Return the mastery of the provided player with the provided champion
     async def get_mastery(self, puuid: str, champion_id: int) -> Mastery | None:
@@ -300,10 +184,10 @@ class RiotApi:
         data = await self.request(url)
         if not data:
             logger.debug(f"No spectator data found for puuid {puuid}")
-            self.trim_active_game_cache(puuid)
+            self.trim_spectator_cache(puuid)
             return None
         else:
-            riot_id = self.print_riot_id(self.riot_ids[puuid])
+            riot_id = self.riot_ids[puuid]
             logger.debug(f"Player {riot_id} is in game")
             game_id = data["gameId"]
             # If we have this game cached, just return it
@@ -319,32 +203,27 @@ class RiotApi:
                 self.spectator_cache[game_id] = spectator
             return spectator
 
-    # Print the riot id provided a game name and tag line
-    def print_riot_id(self, riot_id: tuple) -> str:
-
-        return f"{riot_id[0]}#{riot_id[1]}"
-
     # The provided player has stopped playing, so remove the associated game id
     # from the internal list if there is any
-    def trim_active_game_cache(self, puuid: str) -> None:
+    def trim_spectator_cache(self, puuid: str) -> None:
 
-        game_id_to_delete = self.get_game_id_for_player(puuid)
+        game_ids_to_delete = self.get_game_ids_for_player(puuid)
         # If a game was found for this player, delete it from the cache
-        if game_id_to_delete != None:
-            del self.spectator_cache[game_id_to_delete]
-            logger.info(
-                f"Spectator cache has been trimmed to {len(self.spectator_cache)} elements"
-            )
+        for game_id in game_ids_to_delete:
+            del self.spectator_cache[game_id]
+        logger.info(f"Spectator cache trimmed to {len(self.spectator_cache)} elements")
 
-    # Get the game id that corresponds to the provided player, if any
-    def get_game_id_for_player(self, puuid: str) -> str | None:
+    # Get all the game ids where the provided player is participating
+    def get_game_ids_for_player(self, puuid: str) -> set[int]:
 
+        game_ids = set()
         for spectator in self.spectator_cache.values():
             for team in spectator.teams.values():
                 for participant in team:
                     if participant.puuid == puuid:
-                        return spectator.game_id
-        return None
+                        game_ids.add(spectator.game_id)
+                        break
+        return game_ids
 
     # Check if the info for game id provided already exists
     def get_game_from_cache(self, game_id: int) -> Spectator | None:
@@ -371,9 +250,9 @@ class RiotApi:
         self.database.set_champions(self.champions)
 
     # Return the champion name corresponding to a champion id
-    async def get_champion_name(self, champion_id: str) -> str | None:
+    async def get_champion_name(self, champion_id: int) -> str | None:
 
-        if not self.champions:
+        if not self.champions or not champion_id in self.champions:
             await self.request_champion_data()
 
         if not champion_id in self.champions:
@@ -387,34 +266,34 @@ class RiotApi:
         # Check patch version
         await self.check_patch_version()
 
-        # TODO: this function does not actually purge
-
         logger.info(f"Current number of riot ids: {len(self.riot_ids)}")
         logger.info(f"Current number of summoner ids: {len(self.summoner_ids)}")
         logger.info(f"Keeping {len(puuids_to_keep)} puuids")
         # Purge the values in memory:
         # * remove the puuids that are not needed
         # * update the needed ones with the latest values provided by riot
-        for puuid in [puuid for puuid in self.riot_ids]:
+        for puuid in self.riot_ids:
             if not puuid in puuids_to_keep:
                 self.riot_ids.pop(puuid)
             else:
                 riot_id = await self.get_riot_id(puuid)
                 if not riot_id:
                     logger.error(
-                        f"No riot id found for puuid {puuid} while purging. Keeping old value"
+                        f"No riot id found for puuid {puuid} while purging. Keeping old value. This may be a big problem..."
                     )
-                self.riot_ids[puuid] = riot_id
-        for puuid in [puuid for puuid in self.summoner_ids]:
+                else:
+                    self.riot_ids[puuid] = riot_id
+        for puuid in self.summoner_ids:
             if not puuid in puuids_to_keep:
                 self.summoner_ids.pop(puuid)
             else:
                 summoner_id = await self.get_summoner_id(puuid)
                 if not summoner_id:
                     logger.error(
-                        f"No summoner id found for puuid {puuid} while purging. Keeping old value"
+                        f"No summoner id found for puuid {puuid} while purging. Keeping old value. This may be a big problem..."
                     )
-                self.summoner_ids[puuid] = summoner_id
+                else:
+                    self.summoner_ids[puuid] = summoner_id
         # Send the final values to the file database
         self.database.set_riot_ids(self.riot_ids)
         self.database.set_summoner_ids(self.summoner_ids)

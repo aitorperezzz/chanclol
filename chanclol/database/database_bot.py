@@ -1,6 +1,6 @@
 import logging
 
-from database import Database
+from database.database import Database
 from player import Player
 from guild import Guild
 
@@ -32,7 +32,7 @@ class DatabaseBot(Database):
         return True
 
     # Decides if the provided guild exists in the database
-    def guild_exists(self, guild_id: str) -> bool:
+    def guild_exists(self, guild_id: int) -> bool:
 
         result = self.execute_query(
             "SELECT * FROM guilds WHERE guild_id=?;", (guild_id,)
@@ -40,7 +40,7 @@ class DatabaseBot(Database):
         return len(result) == 1
 
     # Decides if the provided player exists in the database for the provided guild
-    def player_exists(self, puuid: str, guild_id: str) -> bool:
+    def player_exists(self, puuid: str, guild_id: int) -> bool:
 
         result = self.execute_query(
             "SELECT * FROM players WHERE puuid=? AND guild_id=?;",
@@ -52,7 +52,7 @@ class DatabaseBot(Database):
         return len(result) == 1
 
     # Create the dictionary of guilds as stored in the database
-    def get_guilds(self) -> dict:
+    def get_guilds(self) -> dict[int, Guild]:
 
         logger.info("Getting guilds from the database")
         guilds_db = self.execute_query("SELECT * FROM guilds;")
@@ -83,7 +83,7 @@ class DatabaseBot(Database):
         return guilds
 
     # Create the dictionary of players as stored in the database
-    def get_players(self) -> dict:
+    def get_players(self) -> dict[str, Player]:
 
         logger.info("Getting players from the database")
         players_db = self.execute_query("SELECT * FROM players;")
@@ -100,7 +100,7 @@ class DatabaseBot(Database):
         return players
 
     # Adds a new guild to the database
-    def add_guild(self, guild_id: int, channel_id: str) -> None:
+    def add_guild(self, guild_id: int, channel_id: int) -> None:
 
         logger.info(f"Adding guild {guild_id} to the database")
         if self.guild_exists(guild_id):
@@ -152,7 +152,7 @@ class DatabaseBot(Database):
         )
 
     # Changes the channel id for the specified guild
-    def set_channel_id(self, guild_id: int, channel_id: str) -> None:
+    def set_channel_id(self, guild_id: int, channel_id: int) -> None:
 
         logger.info(f"Setting channel id {channel_id} for guild {guild_id}")
         if not self.guild_exists(guild_id):
