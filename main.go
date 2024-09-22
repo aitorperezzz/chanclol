@@ -11,8 +11,6 @@ import (
 func main() {
 	fmt.Println("Hello from inside chanclol")
 
-	// TODO: create Discord client
-
 	// Create riot API
 	var riotapiDbFilename string
 	var apiKey string
@@ -21,9 +19,16 @@ func main() {
 	fmt.Println(riotapi)
 
 	// Create bot
+	var discordToken string
 	var botDbFilename string
 	var riotapiHousekeeping, offlineThreshold, offlineTimeout, onlineTimeout, mainCycle time.Duration
-	bot := bot.CreateBot(botDbFilename, riotapiHousekeeping, offlineThreshold, offlineTimeout, onlineTimeout, mainCycle, &riotapi)
+	bot, err := bot.CreateBot(discordToken, botDbFilename, riotapiHousekeeping, offlineThreshold, offlineTimeout, onlineTimeout, mainCycle, &riotapi)
+	if err != nil {
+		fmt.Printf("Could not create discord bot")
+		return
+	}
 	fmt.Println(bot)
 
+	// Run bot
+	bot.Run()
 }
