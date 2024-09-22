@@ -1,8 +1,8 @@
 package bot
 
 import (
-	"chanclol/common"
-	"chanclol/types"
+	"chanclol/internal/common"
+	"chanclol/internal/types"
 )
 
 type Guild struct {

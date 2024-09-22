@@ -1,6 +1,6 @@
 package database
 
-import "chanclol/types"
+import "chanclol/internal/types"
 
 type DatabaseRiotApi struct {
 	Database

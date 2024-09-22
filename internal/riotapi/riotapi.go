@@ -1,9 +1,9 @@
 package riotapi
 
 import (
-	"chanclol/common"
-	"chanclol/database"
-	"chanclol/types"
+	"chanclol/internal/common"
+	"chanclol/internal/database"
+	"chanclol/internal/types"
 	"encoding/json"
 	"fmt"
 	"strconv"

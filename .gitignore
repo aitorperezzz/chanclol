@@ -1,5 +1,5 @@
 .vscode/
-chanclol/chanclol
+chanclol
 .env
 *.db
 *.log

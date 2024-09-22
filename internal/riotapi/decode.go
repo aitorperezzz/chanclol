@@ -1,7 +1,7 @@
 package riotapi
 
 import (
-	"chanclol/types"
+	"chanclol/internal/types"
 	"encoding/json"
 	"time"
 )
