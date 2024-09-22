@@ -1,22 +1,21 @@
 package riotapi
 
 import (
-	"chanclol/internal/types"
 	"encoding/json"
 	"time"
 )
 
-func DecodeRiotId(data []byte) (types.RiotId, error) {
+func DecodeRiotId(data []byte) (RiotId, error) {
 
 	// unmarshal
-	var riotid types.RiotId
+	var riotid RiotId
 	if err := json.Unmarshal(data, &riotid); err != nil {
-		return types.RiotId{}, err
+		return RiotId{}, err
 	}
 	return riotid, nil
 }
 
-func DecodePuuid(data []byte) (types.Puuid, error) {
+func DecodePuuid(data []byte) (Puuid, error) {
 
 	var puuid struct {
 		Puuid string
@@ -25,13 +24,13 @@ func DecodePuuid(data []byte) (types.Puuid, error) {
 		return "", err
 	}
 
-	return types.Puuid(puuid.Puuid), nil
+	return Puuid(puuid.Puuid), nil
 }
 
-func DecodeLeagues(data []byte) ([]types.League, error) {
+func DecodeLeagues(data []byte) ([]League, error) {
 
 	// unmarshal
-	var leagues []types.League
+	var leagues []League
 	if err := json.Unmarshal(data, &leagues); err != nil {
 		return nil, err
 	}
@@ -51,7 +50,7 @@ func DecodeLeagues(data []byte) ([]types.League, error) {
 	return leagues, nil
 }
 
-func DecodeMastery(data []byte) (types.Mastery, error) {
+func DecodeMastery(data []byte) (Mastery, error) {
 
 	// unmarshal
 	var raw struct {
@@ -59,40 +58,40 @@ func DecodeMastery(data []byte) (types.Mastery, error) {
 		LastPlayTime  int64
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
-		return types.Mastery{}, err
+		return Mastery{}, err
 	}
 
-	return types.Mastery{Level: raw.ChampionLevel, LastPlayed: time.Unix(0, raw.LastPlayTime*int64(time.Millisecond))}, nil
+	return Mastery{Level: raw.ChampionLevel, LastPlayed: time.Unix(0, raw.LastPlayTime*int64(time.Millisecond))}, nil
 }
 
-func DecodeGameId(data []byte) (types.GameId, error) {
+func DecodeGameId(data []byte) (GameId, error) {
 
-	var gameId struct{ GameId types.GameId }
+	var gameId struct{ GameId GameId }
 	if err := json.Unmarshal(data, &gameId); err != nil {
 		return 0, err
 	}
 	return gameId.GameId, nil
 }
 
-func DecodeSpectator(data []byte, riotapi *RiotApi) (types.Spectator, error) {
+func DecodeSpectator(data []byte, riotapi *RiotApi) (Spectator, error) {
 
 	// unmarshal
 	var raw struct {
-		GameId       types.GameId
+		GameId       GameId
 		GameMode     string
 		GameLength   int64
 		Participants []struct {
-			puuid      types.Puuid
-			championId types.ChampionId
+			puuid      Puuid
+			championId ChampionId
 			teamId     int
 		}
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
-		return types.Spectator{}, err
+		return Spectator{}, err
 	}
 
 	// teams
-	teams := types.Teams{}
+	teams := Teams{}
 	for _, part := range raw.Participants {
 
 		var err error
@@ -100,35 +99,35 @@ func DecodeSpectator(data []byte, riotapi *RiotApi) (types.Spectator, error) {
 		// Request all the necessary data for this participant
 
 		// riotid
-		var riotid types.RiotId
+		var riotid RiotId
 		if riotid, err = riotapi.GetRiotId(part.puuid); err != nil {
-			return types.Spectator{}, err
+			return Spectator{}, err
 		}
 
 		// champion name
 		var championName string
 		if championName, err = riotapi.GetChampionName(part.championId); err != nil {
-			return types.Spectator{}, err
+			return Spectator{}, err
 		}
 
 		// champion mastery
-		var mastery types.Mastery
+		var mastery Mastery
 		if mastery, err = riotapi.GetMastery(part.puuid, part.championId); err != nil {
-			return types.Spectator{}, err
+			return Spectator{}, err
 		}
 
 		// league
-		var leagues []types.League
+		var leagues []League
 		if leagues, err = riotapi.GetLeagues(part.puuid); err != nil {
-			return types.Spectator{}, err
+			return Spectator{}, err
 		}
 
-		participant := types.Participant{Puuid: part.puuid, Riotid: riotid, ChampionName: championName, Mastery: mastery, Leagues: leagues}
+		participant := Participant{Puuid: part.puuid, Riotid: riotid, ChampionName: championName, Mastery: mastery, Leagues: leagues}
 
 		// Add participant to the team
 		teams[part.teamId] = append(teams[part.teamId], participant)
 	}
 
-	return types.Spectator{GameId: raw.GameId, GameMode: raw.GameMode, GameLength: time.Duration(raw.GameLength * int64(time.Second)), Teams: teams}, nil
+	return Spectator{GameId: raw.GameId, GameMode: raw.GameMode, GameLength: time.Duration(raw.GameLength * int64(time.Second)), Teams: teams}, nil
 
 }

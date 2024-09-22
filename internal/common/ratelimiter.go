@@ -33,7 +33,7 @@ func CreateRateLimiter(restrictions []Restriction) RateLimiter {
 		}
 	}
 	// Initialise a stopwatch
-	rl.stopwatch.timeout = rl.duration
+	rl.stopwatch.Timeout = rl.duration
 
 	return rl
 }

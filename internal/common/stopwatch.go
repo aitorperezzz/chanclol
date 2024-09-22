@@ -7,9 +7,9 @@ import (
 // This stopwatch keeps track of time. You can set a timeout for it,
 // make it start counting time, and ask it if the timeout has been reached
 type Stopwatch struct {
-	timeout   time.Duration
+	Timeout   time.Duration
 	startTime time.Time
-	running   bool
+	Running   bool
 }
 
 func CreateStopwatch(timeout time.Duration) Stopwatch {
@@ -17,12 +17,12 @@ func CreateStopwatch(timeout time.Duration) Stopwatch {
 }
 
 func (s *Stopwatch) Start() {
-	s.running = true
+	s.Running = true
 	s.startTime = time.Now()
 }
 
 func (s *Stopwatch) Stop() {
-	s.running = false
+	s.Running = false
 }
 
 // Return the time elapsed since this stopwatch
@@ -31,5 +31,5 @@ func (s *Stopwatch) Stop() {
 // has not been reached
 func (s *Stopwatch) TimeStopped() time.Duration {
 	currentTime := time.Now()
-	return currentTime.Sub(s.startTime.Add(s.timeout))
+	return currentTime.Sub(s.startTime.Add(s.Timeout))
 }
