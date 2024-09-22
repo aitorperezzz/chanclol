@@ -1,6 +1,5 @@
 .vscode/
-__pycache__/
+chanclol/chanclol
 .env
-.venv
 *.db
 *.log
