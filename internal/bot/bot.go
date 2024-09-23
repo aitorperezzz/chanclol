@@ -201,7 +201,45 @@ func (bot *Bot) sendResponses(discord *discordgo.Session, channelId string, resp
 }
 
 func (bot *Bot) register(riotid riotapi.RiotId, guild Guild) []Response {
-	return []Response{}
+
+	// Get the puuid
+	puuid, err := bot.riotapi.GetPuuid(riotid)
+	if err != nil {
+		fmt.Printf("Puuid not found for riot id %s", &riotid)
+		return NoResponseRiotApi(riotid)
+	}
+
+	// Check if player already belongs to the guild
+	if _, ok := guild.lastInformedGameIds[puuid]; ok {
+		fmt.Printf("Player %s is already registered in guild %s", riotid, guild.id)
+		return PlayerAlreadyRegistered(riotid)
+	}
+
+	// Get rank of this player
+	leagues, err := bot.riotapi.GetLeagues(puuid)
+	if err != nil {
+		fmt.Printf("Could not get rank from Riot API for player %s", &riotid)
+	}
+
+	// Now it's safe to register the player
+	fmt.Printf("Registering player %s in guild %s", &riotid, guild.id)
+	// Add it to my complete list of players if necessary
+	if _, ok := bot.players[puuid]; !ok {
+		player := Player{id: puuid}
+		player.StopWatch.Timeout = bot.offlineTimeout
+		bot.players[puuid] = player
+	}
+	// Add to the guild
+	guild.lastInformedGameIds[puuid] = 0
+	// Add to the database
+	bot.database.AddPlayerToGuild(puuid, guild.id)
+
+	// Send the final message
+	fmt.Printf("Player %s has been registered in guild %s", &riotid, guild.id)
+	return []Response{
+		PlayerRegistered(riotid),
+		PlayerRank(riotid, leagues),
+	}
 }
 
 func (bot *Bot) unregister(riotid riotapi.RiotId, guild Guild) []Response {

@@ -2,6 +2,7 @@ package bot
 
 import (
 	"chanclol/internal/common"
+	"chanclol/internal/riotapi"
 )
 
 type DatabaseBot struct {
@@ -16,10 +17,14 @@ func (db *DatabaseBot) GetGuilds() Guilds {
 	return Guilds{}
 }
 
-func (db *DatabaseBot) GetPlayers() Players {
-	return Players{}
-}
-
 func (db *DatabaseBot) AddGuild(guildid string, channelid string) {
 
+}
+
+func (db *DatabaseBot) AddPlayerToGuild(puuid riotapi.Puuid, guildid string) {
+
+}
+
+func (db *DatabaseBot) GetPlayers() Players {
+	return Players{}
 }
