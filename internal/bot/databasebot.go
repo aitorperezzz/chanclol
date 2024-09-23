@@ -21,7 +21,15 @@ func (db *DatabaseBot) AddGuild(guildid string, channelid string) {
 
 }
 
+func (db *DatabaseBot) SetChannel(guildid string, channelid string) {
+
+}
+
 func (db *DatabaseBot) AddPlayerToGuild(puuid riotapi.Puuid, guildid string) {
+
+}
+
+func (db *DatabaseBot) RemovePlayerFromGuild(puuid riotapi.Puuid, guildid string) {
 
 }
 
