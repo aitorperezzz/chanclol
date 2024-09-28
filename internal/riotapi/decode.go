@@ -61,7 +61,7 @@ func DecodeMastery(data []byte) (Mastery, error) {
 		return Mastery{}, err
 	}
 
-	return Mastery{Level: raw.ChampionLevel, LastPlayed: time.Unix(0, raw.LastPlayTime*int64(time.Millisecond))}, nil
+	return Mastery{Level: raw.ChampionLevel, LastPlayed: time.Unix(0, raw.LastPlayTime*int64(time.Millisecond)), Available: true}, nil
 }
 
 func DecodeGameId(data []byte) (GameId, error) {

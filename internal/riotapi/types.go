@@ -20,6 +20,7 @@ type RiotId struct {
 type Mastery struct {
 	Level      int
 	LastPlayed time.Time
+	Available  bool
 }
 
 type League struct {

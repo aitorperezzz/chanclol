@@ -33,6 +33,10 @@ func (db *DatabaseBot) RemovePlayerFromGuild(puuid riotapi.Puuid, guildid string
 
 }
 
+func (db *DatabaseBot) SetLastInformedGameId(puuid riotapi.Puuid, guildid string, gameid riotapi.GameId) {
+
+}
+
 func (db *DatabaseBot) GetPlayers() Players {
 	return Players{}
 }

@@ -5,8 +5,8 @@ import "time"
 // A restriction means that only the specified number of requests
 // are allowed for a specific time duration
 type Restriction struct {
-	requests int
-	duration time.Duration
+	Requests int
+	Duration time.Duration
 }
 
 // Analyse the recent history of requests and find out
@@ -19,7 +19,7 @@ func (rest *Restriction) Analyse(history []time.Time) Analysis {
 	currentTime := time.Now()
 	count := 0
 	for i := len(history) - 1; i >= 0; i-- {
-		if currentTime.Sub(history[i]) > rest.duration {
+		if currentTime.Sub(history[i]) > rest.Duration {
 			break
 		} else {
 			count++
@@ -28,8 +28,8 @@ func (rest *Restriction) Analyse(history []time.Time) Analysis {
 	oldestRequestTime := history[len(history)-count]
 
 	// Return the result of the analysis
-	if count >= rest.requests {
-		return Analysis{false, oldestRequestTime.Sub(currentTime.Add(-rest.duration))}
+	if count >= rest.Requests {
+		return Analysis{false, oldestRequestTime.Sub(currentTime.Add(-rest.Duration))}
 	} else {
 		return Analysis{true, 0}
 	}

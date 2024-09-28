@@ -28,8 +28,8 @@ func CreateRateLimiter(restrictions []Restriction) RateLimiter {
 	// Duration
 	rl.duration = math.MinInt
 	for i := 0; i < len(restrictions); i++ {
-		if restrictions[i].duration > rl.duration {
-			rl.duration = restrictions[i].duration
+		if restrictions[i].Duration > rl.duration {
+			rl.duration = restrictions[i].Duration
 		}
 	}
 	// Initialise a stopwatch
