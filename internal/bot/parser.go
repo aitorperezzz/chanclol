@@ -50,7 +50,7 @@ func Parse(message string) ParseResult {
 	}
 
 	// The message has to start with the bot prefix
-	if !strings.HasPrefix(message, prefix) {
+	if !strings.HasPrefix(strings.ToLower(message), prefix) {
 		log.Debug().Msg("Reject message not intended for the bot")
 		return ParseResult{parseid: PARSEID_NO_BOT_PREFIX}
 	}
