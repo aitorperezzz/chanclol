@@ -357,10 +357,10 @@ func (bot *Bot) status(discord *discordgo.Session, guild *Guild) []Response {
 
 	// Create list of player names in this guild
 	riotIds := []riotapi.RiotId{}
-	for _, player := range bot.players {
-		riotid, err := bot.riotapi.GetRiotId(player.id)
+	for puuid := range guild.lastInformedGameIds {
+		riotid, err := bot.riotapi.GetRiotId(puuid)
 		if err != nil {
-			panic(fmt.Sprintf("Could not find riot id for puuid %s in status message", player.id))
+			panic(fmt.Sprintf("Could not find riot id for puuid %s in status message", puuid))
 		}
 		riotIds = append(riotIds, riotid)
 	}

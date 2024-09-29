@@ -2,7 +2,10 @@ package riotapi
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
+
+	"github.com/rs/zerolog/log"
 )
 
 func UnmarshalPuuid(data []byte) (Puuid, error) {
@@ -26,14 +29,14 @@ func UnmarshalLeagues(data []byte) ([]League, error) {
 	}
 
 	// Handle internal data
-	for _, league := range leagues {
+	for i := range leagues {
 
 		// winrate
-		games := float32(league.Wins) + float32(league.Losses)
+		games := leagues[i].Wins + leagues[i].Losses
 		if games > 0 {
-			league.Winrate = (100.0 * float32(league.Wins) / games)
+			leagues[i].Winrate = 100.0 * float32(leagues[i].Wins) / float32(games)
 		} else {
-			league.Winrate = 0
+			leagues[i].Winrate = 0
 		}
 	}
 
@@ -102,9 +105,11 @@ func UnmarshalSpectator(data []byte, riotapi *RiotApi) (Spectator, error) {
 		}
 
 		// champion mastery
+		// TODO: I cannot distinguish if mastery is not available or
+		// I have a problem connecting to riot API
 		var mastery Mastery
 		if mastery, err = riotapi.GetMastery(part.Puuid, part.ChampionId); err != nil {
-			return Spectator{}, err
+			log.Debug().Msg(fmt.Sprintf("Mastery not available for puuid %s", string(part.Puuid)))
 		}
 
 		// league

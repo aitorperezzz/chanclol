@@ -98,7 +98,7 @@ func PlayerRank(riotid riotapi.RiotId, leagues []riotapi.League) Response {
 
 func LeagueMessageValue(league riotapi.League) string {
 
-	return fmt.Sprintf("%s %s %d LPs. WR %f%% (%dW/%dL)", league.Tier, league.Rank, league.Lps, league.Winrate, league.Wins, league.Losses)
+	return fmt.Sprintf("%s %s %d LPs. WR %d%% (%dW/%dL)", league.Tier, league.Rank, league.Lps, int(league.Winrate), league.Wins, league.Losses)
 }
 
 func ChannelDoesNotExist(channelName string) []Response {
@@ -125,14 +125,14 @@ func StatusMessage(riotids []riotapi.RiotId, channelName string) []Response {
 	} else {
 		stringSlice := func(riotids []riotapi.RiotId) []string {
 			result := make([]string, len(riotids))
-			for _, riotid := range riotids {
-				result = append(result, riotid.String())
+			for i := range riotids {
+				result[i] = riotids[i].String()
 			}
 			return result
 		}
 		field = discordgo.MessageEmbedField{
 			Name:   "Players registered:",
-			Value:  strings.Join(stringSlice(riotids), ", "),
+			Value:  strings.Join(stringSlice(riotids), "\n"),
 			Inline: false,
 		}
 	}
@@ -151,7 +151,7 @@ func StatusMessage(riotids []riotapi.RiotId, channelName string) []Response {
 func InGameMessage(puuid riotapi.Puuid, riotid riotapi.RiotId, spectator riotapi.Spectator) []Response {
 
 	embed := discordgo.MessageEmbed{
-		Title:       fmt.Sprintf("%s is in game", &riotid),
+		Title:       fmt.Sprintf("%s is in game (%s)", &riotid, spectator.GameMode),
 		Description: fmt.Sprintf("Time elapsed: %d minutes", int64(spectator.GameLength.Minutes())),
 		Color:       color,
 	}
@@ -171,7 +171,7 @@ func InGameMessage(puuid riotapi.Puuid, riotid riotapi.RiotId, spectator riotapi
 		panic(fmt.Sprintf("Could not find player %s among the participants", &riotid))
 	}
 	// Create the list of teams, putting our player's team first
-	teamids := make([]int, len(spectator.Teams))
+	teamids := make([]int, 0)
 	for teamid := range spectator.Teams {
 		if teamid == playerTeamId {
 			teamids = slices.Insert(teamids, 0, teamid)
@@ -191,16 +191,26 @@ func AddInGameMessage(team riotapi.Team, index int, embed *discordgo.MessageEmbe
 	name := fmt.Sprintf("**Team %d**", index+1)
 	value := ""
 	for _, participant := range team {
-		value += fmt.Sprintf("**%s** (%s)", participant.ChampionName, participant.Riotid)
+		value += fmt.Sprintf("**%s** (%s)\n", participant.ChampionName, participant.Riotid)
 		if participant.Mastery.Available {
 			lastPlayed := int64(time.Since(participant.Mastery.LastPlayed).Hours()) / 24
-			value += fmt.Sprintf("- Mastery %d, lasy played %d days ago", participant.Mastery.Level, lastPlayed)
+			value += fmt.Sprintf("- Mastery %d, %s\n", participant.Mastery.Level, FormatLastPlayed(lastPlayed))
 		} else {
-			value += "- Mastery not available"
+			value += "- Mastery not available\n"
 		}
 		for _, league := range participant.Leagues {
-			value += fmt.Sprintf("- %s: %s", league.QueueType, LeagueMessageValue(league))
+			value += fmt.Sprintf("- %s: %s\n", league.QueueType, LeagueMessageValue(league))
 		}
 	}
 	embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{Name: name, Value: value})
+}
+
+func FormatLastPlayed(lastPlayed int64) string {
+	if lastPlayed == 0 {
+		return "last played today"
+	} else if lastPlayed == 1 {
+		return "last played yesterday"
+	} else {
+		return fmt.Sprintf("last played %d days ago", lastPlayed)
+	}
 }
