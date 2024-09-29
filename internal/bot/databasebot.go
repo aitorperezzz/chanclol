@@ -9,7 +9,7 @@ type DatabaseBot struct {
 	common.Database
 }
 
-func CreateDatabaseBot(dbFilename string) DatabaseBot {
+func NewDatabaseBot(dbFilename string) DatabaseBot {
 	return DatabaseBot{}
 }
 

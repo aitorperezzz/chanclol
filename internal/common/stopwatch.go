@@ -12,7 +12,7 @@ type Stopwatch struct {
 	Running   bool
 }
 
-func CreateStopwatch(timeout time.Duration) Stopwatch {
+func NewStopwatch(timeout time.Duration) Stopwatch {
 	return Stopwatch{timeout, time.Time{}, false}
 }
 

@@ -4,6 +4,8 @@ import (
 	"chanclol/internal/riotapi"
 	"fmt"
 	"strings"
+
+	"github.com/rs/zerolog/log"
 )
 
 const prefix string = "chanclol"
@@ -49,7 +51,7 @@ func Parse(message string) ParseResult {
 
 	// The message has to start with the bot prefix
 	if !strings.HasPrefix(message, prefix) {
-		fmt.Println("Reject message not intended for the bot")
+		log.Debug().Msg("Reject message not intended for the bot")
 		return ParseResult{parseid: PARSEID_NO_BOT_PREFIX}
 	}
 

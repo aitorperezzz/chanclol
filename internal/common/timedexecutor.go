@@ -14,8 +14,8 @@ type TimedExecutor struct {
 }
 
 // Create a timed executor provided a timeout and a task
-func CreateTimedExecutor(timeout time.Duration, task func()) TimedExecutor {
-	return TimedExecutor{CreateStopwatch(timeout), task}
+func NewTimedExecutor(timeout time.Duration, task func()) TimedExecutor {
+	return TimedExecutor{NewStopwatch(timeout), task}
 }
 
 // Execute the task if the timeout has been reached, else do nothing

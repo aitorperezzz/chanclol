@@ -36,7 +36,7 @@ type RiotApi struct {
 	spectatorCache map[GameId]Spectator
 }
 
-func CreateRiotApi(dbFilename string, apiKey string, restrictions []common.Restriction) RiotApi {
+func NewRiotApi(dbFilename string, apiKey string, restrictions []common.Restriction) RiotApi {
 
 	var riotapi RiotApi
 
