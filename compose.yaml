@@ -3,11 +3,5 @@ services:
     build: .
     volumes:
       - type: bind
-        source: ./bot.db
-        target: /app/bot.db
-      - type: bind
-        source: ./riotapi.db
-        target: /app/riotapi.db
-      - type: bind
         source: ./.env
         target: /app/.env
