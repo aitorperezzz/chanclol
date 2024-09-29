@@ -76,7 +76,6 @@ func (proxy *Proxy) Request(url string, vital bool) []byte {
 		fmt.Println("Could not perform request")
 		return nil
 	}
-	fmt.Println(res)
 
 	// Check if the status of the request is understood
 	message, ok := messages[res.StatusCode]
@@ -84,7 +83,7 @@ func (proxy *Proxy) Request(url string, vital bool) []byte {
 		fmt.Printf("Status code of request (%d) is not understood", res.StatusCode)
 		return nil
 	}
-	fmt.Println(message)
+	fmt.Printf("%d %s\n", res.StatusCode, message)
 
 	switch res.StatusCode {
 	case OK:

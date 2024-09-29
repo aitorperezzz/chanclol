@@ -54,10 +54,10 @@ func CreateRiotApi(dbFilename string, apiKey string, restrictions []common.Restr
 func (riotapi *RiotApi) GetRiotId(puuid Puuid) (RiotId, error) {
 
 	// Check cache
-	riotid, ok := riotapi.riotIds[puuid]
-	if ok {
+	if riotid, ok := riotapi.riotIds[puuid]; ok {
 		return riotid, nil
 	}
+	fmt.Printf("Riot id for puuid %s is not in the cache\n", puuid)
 
 	// Request
 	url := fmt.Sprintf(RIOT_SCHEMA, "europe") + fmt.Sprintf(ROUTE_ACCOUNT_RIOT_ID, puuid)
@@ -67,11 +67,11 @@ func (riotapi *RiotApi) GetRiotId(puuid Puuid) (RiotId, error) {
 	}
 
 	// Decode
-	riotid, err := DecodeRiotId(data)
-	if err != nil {
-		return riotid, err
+	var riotid RiotId
+	if err := json.Unmarshal(data, &riotid); err != nil {
+		return RiotId{}, err
 	}
-	fmt.Printf("found riot id %s for puuid %s", riotid, puuid)
+	fmt.Printf("Found riot id %s for puuid %s", riotid, puuid)
 
 	// Update cache
 	riotapi.riotIds[puuid] = riotid
@@ -96,7 +96,7 @@ func (riotapi *RiotApi) GetPuuid(riotid RiotId) (Puuid, error) {
 	}
 
 	// Decode
-	puuid, err := DecodePuuid(data)
+	puuid, err := UnmarshalPuuid(data)
 	if err != nil {
 		return "", err
 	}
@@ -139,7 +139,7 @@ func (riotapi *RiotApi) GetMastery(puuid Puuid, championId ChampionId) (Mastery,
 		return Mastery{}, fmt.Errorf("could not find mastery for puuid %s and champion id %d", puuid, championId)
 	}
 
-	return DecodeMastery(data)
+	return UnmarshalMastery(data)
 }
 
 func (riotapi *RiotApi) GetLeagues(puuid Puuid) ([]League, error) {
@@ -157,7 +157,7 @@ func (riotapi *RiotApi) GetLeagues(puuid Puuid) ([]League, error) {
 		return nil, fmt.Errorf("no leagues found for puuid %s", puuid)
 	}
 
-	leagues, err := DecodeLeagues(data)
+	leagues, err := UnmarshalLeagues(data)
 	if err != nil {
 		return nil, err
 	}
@@ -182,7 +182,7 @@ func (riotapi *RiotApi) GetSpectator(puuid Puuid) (Spectator, error) {
 	fmt.Printf("%s is playing", riotid)
 
 	// Decode game id and check if in cache
-	gameId, err := DecodeGameId(data)
+	gameId, err := UnmarshalGameId(data)
 	if err != nil {
 		return Spectator{}, err
 	}
@@ -194,7 +194,7 @@ func (riotapi *RiotApi) GetSpectator(puuid Puuid) (Spectator, error) {
 	// Not cached, so we need to decode the complete data
 	// and make all the other requests
 	// TODO: this function name makes me think I'm only decoding
-	spectator, err := DecodeSpectator(data, riotapi)
+	spectator, err := UnmarshalSpectator(data, riotapi)
 	if err != nil {
 		return Spectator{}, err
 	}
@@ -273,7 +273,9 @@ func (riotapi *RiotApi) trimSpectatorCache(puuid Puuid) {
 	for gameId := range gameIds {
 		delete(riotapi.spectatorCache, gameId)
 	}
-	fmt.Printf("Spectator cache trimmed to %d elements", len(riotapi.spectatorCache))
+	if len(gameIds) > 0 {
+		fmt.Printf("Spectator cache trimmed to %d elements", len(riotapi.spectatorCache))
+	}
 }
 
 // Get all the game ids where the provided player is participating
@@ -300,10 +302,11 @@ func (riotapi *RiotApi) GetGameIds(puuid Puuid) map[GameId]struct{} {
 func (riotapi *RiotApi) request(url string) []byte {
 
 	vital := !strings.Contains(url, fmt.Sprintf(ROUTE_SPECTATOR, ""))
+	fmt.Printf("Request to url %s\n", url)
 	return riotapi.proxy.Request(url, vital)
 }
 
-func (riotapi *RiotApi) Houesekeeping(puuidsToKeep map[Puuid]struct{}) {
+func (riotapi *RiotApi) Housekeeping(puuidsToKeep map[Puuid]struct{}) {
 
 	// Check patch version
 	if riotapi.checkPatchVersion() != nil {

@@ -9,6 +9,9 @@ import (
 	"io"
 	"os"
 	"time"
+
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
 
 type Config struct {
@@ -16,8 +19,8 @@ type Config struct {
 	BotDbFilename               string `json:"database_filename_bot"`
 	RiotapiDbFilename           string `json:"database_filename_riotapi"`
 	OfflineThresholdMins        int    `json:"offline_threshold_mins"`
-	OnlineTimeoutSecs           int    `json:"online_timeout_secs"`
-	OfflineTimeoutSecs          int    `json:"offline_timeout_secs"`
+	OnlineTimeoutSecs           int    `json:"timeout_online_secs"`
+	OfflineTimeoutSecs          int    `json:"timeout_offline_secs"`
 	MainLoopCycleSecs           int    `json:"main_loop_cycle_secs"`
 	RiotapiHousekeepingCycleHrs int    `json:"riotapi_housekeeping_cycle_hrs"`
 	Restrictions                []struct {
@@ -27,6 +30,11 @@ type Config struct {
 }
 
 func main() {
+
+	// Configure logger
+	// TODO: read log level from config file
+	zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr}).With().Caller().Logger()
 
 	// TODO: read from env file
 	var apiKey string
@@ -52,6 +60,7 @@ func main() {
 	}
 
 	// Create riot API
+	fmt.Println("Creating Riot API")
 	restrictions := make([]common.Restriction, len(config.Restrictions))
 	for _, restriction := range config.Restrictions {
 		restrictionDuration := time.Duration(int64(restriction.IntervalSeconds) * int64(time.Second))
@@ -60,7 +69,8 @@ func main() {
 	riotapi := riotapi.CreateRiotApi(config.RiotapiDbFilename, apiKey, restrictions)
 
 	// Create bot
-	riotapiHousekeeping := time.Duration(int64(config.RiotapiHousekeepingCycleHrs) * int64(time.Hour.Hours()))
+	fmt.Println("Creating bot")
+	riotapiHousekeeping := time.Duration(int64(config.RiotapiHousekeepingCycleHrs) * int64(60*60) * int64(time.Second))
 	offlineThreshold := time.Duration(int64(config.OfflineThresholdMins) * int64(time.Minute))
 	offlineTimeout := time.Duration(int64(config.OfflineTimeoutSecs) * int64(time.Second))
 	onlineTimeout := time.Duration(int64(config.OnlineTimeoutSecs) * int64(time.Second))

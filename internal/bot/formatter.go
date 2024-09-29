@@ -13,21 +13,16 @@ import (
 // Use "teal" color for the bot
 const color int = 0x008080
 
-type Response struct {
-	content string
-	embed   discordgo.MessageEmbed
-}
-
 func Welcome(channelName string) []Response {
 
 	content := fmt.Sprintf("Hi, I will be sending messages to channel %s\n", channelName)
 	content += "You can change this anytime by typing \n> `chanclol channel <channel_name>`"
-	return []Response{{content: content}}
+	return []Response{ResponseString{content}}
 }
 
 func InputNotValid(errorMessage string) []Response {
 
-	return []Response{{content: fmt.Sprintf("Input not valid: \n> %s", errorMessage)}}
+	return []Response{ResponseString{fmt.Sprintf("Input not valid: \n> %s", errorMessage)}}
 }
 
 func HelpMessage() []Response {
@@ -63,33 +58,33 @@ func HelpMessage() []Response {
 		Value:  "Print the usage of the different commands",
 		Inline: false,
 	})
-	return []Response{{embed: embed}}
+	return []Response{ResponseEmbed{embed}}
 }
 
 func NoResponseRiotApi(riotid riotapi.RiotId) []Response {
-	return []Response{{content: fmt.Sprintf("Got no response from Riot API for player `%s`", &riotid)}}
+	return []Response{ResponseString{fmt.Sprintf("Got no response from Riot API for player `%s`", &riotid)}}
 }
 
 func PlayerAlreadyRegistered(riotid riotapi.RiotId) []Response {
-	return []Response{{content: fmt.Sprintf("Player `%s` is already registered", &riotid)}}
+	return []Response{ResponseString{fmt.Sprintf("Player `%s` is already registered", &riotid)}}
 }
 
 func PlayerRegistered(riotid riotapi.RiotId) Response {
-	return Response{content: fmt.Sprintf("Player `%s` has been registered", &riotid)}
+	return ResponseString{fmt.Sprintf("Player `%s` has been registered", &riotid)}
 }
 
 func PlayerUnregistered(riotid riotapi.RiotId) []Response {
-	return []Response{{content: fmt.Sprintf("Player `%s` unregistered correctly", riotid)}}
+	return []Response{ResponseString{fmt.Sprintf("Player `%s` unregistered correctly", riotid)}}
 }
 
 func PlayerNotPreviouslyRegistered(riotid riotapi.RiotId) []Response {
-	return []Response{{content: fmt.Sprintf("Player `%s` was not registered previously", riotid)}}
+	return []Response{ResponseString{fmt.Sprintf("Player `%s` was not registered previously", riotid)}}
 }
 
 func PlayerRank(riotid riotapi.RiotId, leagues []riotapi.League) Response {
 
 	if len(leagues) == 0 {
-		return Response{content: fmt.Sprintf("Player `%s` is not ranked", &riotid)}
+		return ResponseString{fmt.Sprintf("Player `%s` is not ranked", &riotid)}
 	} else {
 		embed := discordgo.MessageEmbed{Title: fmt.Sprintf("Current rank of player `%s`", &riotid), Color: color}
 		for _, league := range leagues {
@@ -97,7 +92,7 @@ func PlayerRank(riotid riotapi.RiotId, leagues []riotapi.League) Response {
 			value := LeagueMessageValue(league)
 			embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{Name: name, Value: value, Inline: false})
 		}
-		return Response{embed: embed}
+		return ResponseEmbed{embed}
 	}
 }
 
@@ -108,11 +103,11 @@ func LeagueMessageValue(league riotapi.League) string {
 
 func ChannelDoesNotExist(channelName string) []Response {
 
-	return []Response{{content: fmt.Sprintf("Channel `%s` does not exist in this server", channelName)}}
+	return []Response{ResponseString{fmt.Sprintf("Channel `%s` does not exist in this server", channelName)}}
 }
 
 func ChannelChanged(channelName string) []Response {
-	return []Response{{content: fmt.Sprintf("From now on, I will be sending ingame messages to `%s`", channelName)}}
+	return []Response{ResponseString{fmt.Sprintf("From now on, I will be sending ingame messages to `%s`", channelName)}}
 }
 
 func StatusMessage(riotids []riotapi.RiotId, channelName string) []Response {
@@ -131,7 +126,7 @@ func StatusMessage(riotids []riotapi.RiotId, channelName string) []Response {
 		stringSlice := func(riotids []riotapi.RiotId) []string {
 			result := make([]string, len(riotids))
 			for _, riotid := range riotids {
-				result = append(result, fmt.Sprintf("%s", riotid))
+				result = append(result, riotid.String())
 			}
 			return result
 		}
@@ -150,7 +145,7 @@ func StatusMessage(riotids []riotapi.RiotId, channelName string) []Response {
 		Inline: false,
 	})
 
-	return []Response{{embed: embed}}
+	return []Response{ResponseEmbed{embed}}
 }
 
 func InGameMessage(puuid riotapi.Puuid, riotid riotapi.RiotId, spectator riotapi.Spectator) []Response {
@@ -188,7 +183,7 @@ func InGameMessage(puuid riotapi.Puuid, riotid riotapi.RiotId, spectator riotapi
 	for index, teamid := range teamids {
 		AddInGameMessage(spectator.Teams[teamid], index, &embed)
 	}
-	return []Response{{embed: embed}}
+	return []Response{ResponseEmbed{embed}}
 }
 
 func AddInGameMessage(team riotapi.Team, index int, embed *discordgo.MessageEmbed) {

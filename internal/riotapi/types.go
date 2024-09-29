@@ -48,6 +48,6 @@ type Participant struct {
 	Leagues      []League
 }
 
-func (riotid *RiotId) String() string {
+func (riotid RiotId) String() string {
 	return fmt.Sprintf("%s#%s", riotid.GameName, riotid.TagLine)
 }

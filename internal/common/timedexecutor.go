@@ -1,6 +1,8 @@
 package common
 
-import "time"
+import (
+	"time"
+)
 
 // Give the timed executor a task and a timeout.
 // Call the execute function from time to time.

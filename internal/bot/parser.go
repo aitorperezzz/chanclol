@@ -54,8 +54,8 @@ func Parse(message string) ParseResult {
 	}
 
 	// Get the command if valid
-	words := strings.Split(message[len(prefix):], " ")
-	if len(words) == 0 {
+	words := strings.Split(strings.TrimSpace(message[len(prefix):]), " ")
+	if len(words) == 1 && words[0] == "" {
 		parseid := PARSEID_NO_COMMAND
 		return ParseResult{parseid: parseid, errorMessage: errorMessages[parseid]}
 	}

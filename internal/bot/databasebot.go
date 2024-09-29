@@ -14,7 +14,7 @@ func CreateDatabaseBot(dbFilename string) DatabaseBot {
 }
 
 func (db *DatabaseBot) GetGuilds() Guilds {
-	return Guilds{}
+	return make(Guilds)
 }
 
 func (db *DatabaseBot) AddGuild(guildid string, channelid string) {
@@ -38,5 +38,5 @@ func (db *DatabaseBot) SetLastInformedGameId(puuid riotapi.Puuid, guildid string
 }
 
 func (db *DatabaseBot) GetPlayers() Players {
-	return Players{}
+	return make(Players)
 }

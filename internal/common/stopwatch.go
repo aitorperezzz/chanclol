@@ -27,9 +27,13 @@ func (s *Stopwatch) Stop() {
 
 // Return the time elapsed since this stopwatch
 // stopped (reached its timeout).
-// Note that if the number is negative, the timeout still
+// Note that if the number is zero, the timeout still
 // has not been reached
 func (s *Stopwatch) TimeStopped() time.Duration {
 	currentTime := time.Now()
-	return currentTime.Sub(s.startTime.Add(s.Timeout))
+	if s.startTime.Add(s.Timeout).Before(currentTime) {
+		return currentTime.Sub(s.startTime.Add(s.Timeout))
+	} else {
+		return 0
+	}
 }
