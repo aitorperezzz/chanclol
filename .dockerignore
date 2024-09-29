@@ -1,7 +1,5 @@
 .vscode/
-__pycache__/
 .env
-.venv
 *.db
 *.log
 .git/

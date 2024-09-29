@@ -1,5 +1,4 @@
-FROM python:3.12-bookworm
-RUN pip3 install discord.py python-dotenv
+FROM golang:1.23.1-bookworm
 COPY . /app
-WORKDIR /app
-CMD python3 chanclol/main.py
+RUN go build
+CMD go run chanclol
