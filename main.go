@@ -10,6 +10,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/joho/godotenv"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
@@ -31,14 +32,19 @@ type Config struct {
 
 func main() {
 
+	// .env variables
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatal().Msg("Error loading .env file")
+		return
+	}
+	riotapiKey := os.Getenv("RIOT_API_KEY")
+	discordToken := os.Getenv("DISCORD_TOKEN")
+
 	// Configure logger
 	// TODO: read log level from config file
 	zerolog.SetGlobalLevel(zerolog.DebugLevel)
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr}).With().Caller().Logger()
-
-	// TODO: read from env file
-	var apiKey string
-	var discordToken string
 
 	// Read configuration file
 	jsonFile, err := os.Open("config.json")
@@ -66,7 +72,7 @@ func main() {
 		restrictionDuration := time.Duration(int64(restriction.IntervalSeconds) * int64(time.Second))
 		restrictions = append(restrictions, common.Restriction{Requests: restriction.NumRequests, Duration: restrictionDuration})
 	}
-	riotapi := riotapi.CreateRiotApi(config.RiotapiDbFilename, apiKey, restrictions)
+	riotapi := riotapi.CreateRiotApi(config.RiotapiDbFilename, riotapiKey, restrictions)
 
 	// Create bot
 	fmt.Println("Creating bot")
