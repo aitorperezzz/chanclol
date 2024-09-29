@@ -254,7 +254,8 @@ func (bot *Bot) register(riotid riotapi.RiotId, guild *Guild) []Response {
 	// Get rank of this player
 	leagues, err := bot.riotapi.GetLeagues(puuid)
 	if err != nil {
-		log.Info().Msg(fmt.Sprintf("Could not get rank from Riot API for player %s", &riotid))
+		log.Info().Err(err)
+		return NoResponseRiotApi(riotid)
 	}
 
 	// Now it's safe to register the player
@@ -360,7 +361,7 @@ func (bot *Bot) status(discord *discordgo.Session, guild *Guild) []Response {
 	for puuid := range guild.lastInformedGameIds {
 		riotid, err := bot.riotapi.GetRiotId(puuid)
 		if err != nil {
-			panic(fmt.Sprintf("Could not find riot id for puuid %s in status message", puuid))
+			panic(err)
 		}
 		riotIds = append(riotIds, riotid)
 	}
@@ -388,7 +389,7 @@ func (bot *Bot) loop() {
 		}
 		riotid, err := bot.riotapi.GetRiotId(puuid)
 		if err != nil {
-			log.Error().Msg(fmt.Sprintf("Could not find the riot id of the selected puuid %s", puuid))
+			log.Error().Err(err)
 			continue
 		}
 		// We have a player to check
@@ -437,7 +438,7 @@ func (bot *Bot) selectPlayerToCheck() (riotapi.Puuid, bool) {
 	for _, player := range bot.players {
 		riotid, err := bot.riotapi.GetRiotId(player.id)
 		if err != nil {
-			panic(fmt.Sprintf("Could not find riot id for puuid %s among my players", player.id))
+			panic(err)
 		}
 		// Time the stopwatch has been stopped for this player
 		timeStopped := player.StopWatch.TimeStopped()

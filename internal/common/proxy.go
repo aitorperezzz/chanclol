@@ -85,10 +85,11 @@ func (proxy *Proxy) Request(url string, vital bool) []byte {
 		log.Error().Msg(fmt.Sprintf("Status code of request (%d) is not understood", res.StatusCode))
 		return nil
 	}
-	log.Debug().Msg(fmt.Sprintf("%d %s", res.StatusCode, message))
 
+	logMessage := fmt.Sprintf("%d %s", res.StatusCode, message)
 	switch res.StatusCode {
 	case OK:
+		log.Debug().Msg(logMessage)
 		// Read the response
 		stream, err := io.ReadAll(res.Body)
 		if err != nil {
@@ -96,10 +97,15 @@ func (proxy *Proxy) Request(url string, vital bool) []byte {
 			return nil
 		}
 		return stream
+	case DATA_NOT_FOUND:
+		log.Debug().Msg(logMessage)
+		return nil
 	case RATE_LIMIT_EXCEEDED:
+		log.Warn().Msg(logMessage)
 		proxy.rateLimiter.ReceivedRateLimit()
 		return nil
 	default:
+		log.Error().Msg(logMessage)
 		return nil
 	}
 }

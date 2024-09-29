@@ -179,7 +179,7 @@ func (riotapi *RiotApi) GetSpectator(puuid Puuid) (Spectator, error) {
 
 	riotid, err := riotapi.GetRiotId(puuid)
 	if err != nil {
-		return Spectator{}, fmt.Errorf("player with puuid %s is playing but their riot id is not found", puuid)
+		return Spectator{}, err
 	}
 	log.Info().Msg(fmt.Sprintf("%s is playing", riotid))
 
