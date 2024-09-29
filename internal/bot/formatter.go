@@ -8,10 +8,17 @@ import (
 	"time"
 
 	"github.com/bwmarrin/discordgo"
+	"github.com/rs/zerolog/log"
 )
 
 // Use "teal" color for the bot
 const color int = 0x008080
+
+// Change the names of some queue types
+var queueTypeNames map[string]string = map[string]string{
+	"RANKED_SOLO_5x5": "R.Solo",
+	"RANKED_FLEX_SR":  "R.Flex",
+}
 
 func Welcome(channelName string) []Response {
 
@@ -88,7 +95,7 @@ func PlayerRank(riotid riotapi.RiotId, leagues []riotapi.League) Response {
 	} else {
 		embed := discordgo.MessageEmbed{Title: fmt.Sprintf("Current rank of player `%s`", &riotid), Color: color}
 		for _, league := range leagues {
-			name := fmt.Sprintf("**%s**", league.QueueType)
+			name := fmt.Sprintf("**%s**", FormatQueueType(league.QueueType))
 			value := LeagueMessageValue(league)
 			embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{Name: name, Value: value, Inline: false})
 		}
@@ -168,7 +175,8 @@ func InGameMessage(puuid riotapi.Puuid, riotid riotapi.RiotId, spectator riotapi
 		}
 	}
 	if !found {
-		panic(fmt.Sprintf("Could not find player %s among the participants", &riotid))
+		log.Error().Msg(fmt.Sprintf("Could not find player %s among participants", riotid))
+		return []Response{}
 	}
 	// Create the list of teams, putting our player's team first
 	teamids := make([]int, 0)
@@ -199,7 +207,7 @@ func AddInGameMessage(team riotapi.Team, index int, embed *discordgo.MessageEmbe
 			value += "- Mastery not available\n"
 		}
 		for _, league := range participant.Leagues {
-			value += fmt.Sprintf("- %s: %s\n", league.QueueType, LeagueMessageValue(league))
+			value += fmt.Sprintf("- %s: %s\n", FormatQueueType(league.QueueType), LeagueMessageValue(league))
 		}
 	}
 	embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{Name: name, Value: value})
@@ -212,5 +220,13 @@ func FormatLastPlayed(lastPlayed int64) string {
 		return "last played yesterday"
 	} else {
 		return fmt.Sprintf("last played %d days ago", lastPlayed)
+	}
+}
+
+func FormatQueueType(queueType string) string {
+	if name, ok := queueTypeNames[queueType]; ok {
+		return name
+	} else {
+		return queueType
 	}
 }
