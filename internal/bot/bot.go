@@ -426,9 +426,7 @@ func (bot *Bot) loop() {
 			guild.lastInformedGameIds[puuid] = spectator.GameId
 			bot.database.SetLastInformedGameId(puuid, guildid, spectator.GameId)
 		}
-
 	}
-
 }
 
 func (bot *Bot) selectPlayerToCheck() (riotapi.Puuid, bool) {
@@ -512,7 +510,7 @@ func (bot *Bot) getChannelId(discord *discordgo.Session, guildid string, channel
 }
 
 func (bot *Bot) riotapiHousekeeping() {
-	log.Debug().Msg("Performing Riot API housekeeping")
+	log.Info().Msg("Performing Riot API housekeeping")
 	puuidsToKeep := make(map[riotapi.Puuid]struct{}, len(bot.players))
 	for puuid := range bot.players {
 		puuidsToKeep[puuid] = struct{}{}

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+
+	"github.com/rs/zerolog/log"
 )
 
 const (
@@ -42,8 +44,8 @@ type Proxy struct {
 	rateLimiter RateLimiter
 }
 
-func CreateProxy(header map[string]string, restrictions []Restriction) Proxy {
-	return Proxy{header, http.Client{}, CreateRateLimiter(restrictions)}
+func NewProxy(header map[string]string, restrictions []Restriction) Proxy {
+	return Proxy{header, http.Client{}, NewRateLimiter(restrictions)}
 }
 
 // Make a request to the provided url, indicating if it is vital.
@@ -56,14 +58,14 @@ func (proxy *Proxy) Request(url string, vital bool) []byte {
 	go proxy.rateLimiter.Allowed(vital, allowedChan)
 	allowed := <-allowedChan
 	if !allowed {
-		fmt.Println("Rate limiter is not allowing the request")
+		log.Warn().Msg("Rate limiter is not allowing the request")
 		return nil
 	}
 
 	// Create the request and add the header
 	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		fmt.Printf("Could not create request for url %s", url)
+		log.Error().Msg(fmt.Sprintf("Could not create request for url %s", url))
 		return nil
 	}
 	for key, value := range proxy.header {
@@ -73,24 +75,24 @@ func (proxy *Proxy) Request(url string, vital bool) []byte {
 	// Perform the request
 	res, err := proxy.client.Do(request)
 	if err != nil {
-		fmt.Println("Could not perform request")
+		log.Error().Msg("Could not perform request")
 		return nil
 	}
 
 	// Check if the status of the request is understood
 	message, ok := messages[res.StatusCode]
 	if !ok {
-		fmt.Printf("Status code of request (%d) is not understood", res.StatusCode)
+		log.Error().Msg(fmt.Sprintf("Status code of request (%d) is not understood", res.StatusCode))
 		return nil
 	}
-	fmt.Printf("%d %s\n", res.StatusCode, message)
+	log.Debug().Msg(fmt.Sprintf("%d %s", res.StatusCode, message))
 
 	switch res.StatusCode {
 	case OK:
 		// Read the response
 		stream, err := io.ReadAll(res.Body)
 		if err != nil {
-			fmt.Printf("Could not extract the response for url %s", url)
+			log.Debug().Msg(fmt.Sprintf("Could not extract the response for url %s", url))
 			return nil
 		}
 		return stream

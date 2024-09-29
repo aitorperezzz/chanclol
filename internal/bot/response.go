@@ -1,9 +1,8 @@
 package bot
 
 import (
-	"fmt"
-
 	"github.com/bwmarrin/discordgo"
+	"github.com/rs/zerolog/log"
 )
 
 type ResponseString struct {
@@ -19,12 +18,12 @@ type Response interface {
 
 func (response ResponseString) Send(channelid string, discord *discordgo.Session) {
 	if _, err := discord.ChannelMessageSend(channelid, response.string); err != nil {
-		fmt.Println(err)
+		log.Error().Err(err)
 	}
 }
 
 func (response ResponseEmbed) Send(channelid string, discord *discordgo.Session) {
 	if _, err := discord.ChannelMessageSendEmbed(channelid, &response.MessageEmbed); err != nil {
-		fmt.Println(err)
+		log.Error().Err(err)
 	}
 }

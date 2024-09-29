@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/rs/zerolog/log"
 )
 
 // Riot schema
@@ -45,7 +47,7 @@ func NewRiotApi(dbFilename string, apiKey string, restrictions []common.Restrict
 	riotapi.riotIds = riotapi.database.GetRiotIds()
 	riotapi.summonerIds = riotapi.database.GetSummonerIds()
 	riotapi.version = riotapi.database.GetVersion()
-	riotapi.proxy = common.CreateProxy(map[string]string{"X-Riot-Token": apiKey}, restrictions)
+	riotapi.proxy = common.NewProxy(map[string]string{"X-Riot-Token": apiKey}, restrictions)
 	riotapi.spectatorCache = map[GameId]Spectator{}
 
 	return riotapi
@@ -57,7 +59,7 @@ func (riotapi *RiotApi) GetRiotId(puuid Puuid) (RiotId, error) {
 	if riotid, ok := riotapi.riotIds[puuid]; ok {
 		return riotid, nil
 	}
-	fmt.Printf("Riot id for puuid %s is not in the cache\n", puuid)
+	log.Debug().Msg(fmt.Sprintf("Riot id for puuid %s is not in the cache", puuid))
 
 	// Request
 	url := fmt.Sprintf(RIOT_SCHEMA, "europe") + fmt.Sprintf(ROUTE_ACCOUNT_RIOT_ID, puuid)
@@ -71,7 +73,7 @@ func (riotapi *RiotApi) GetRiotId(puuid Puuid) (RiotId, error) {
 	if err := json.Unmarshal(data, &riotid); err != nil {
 		return RiotId{}, err
 	}
-	fmt.Printf("Found riot id %s for puuid %s", riotid, puuid)
+	log.Debug().Msg(fmt.Sprintf("Found riot id %s for puuid %s", riotid, puuid))
 
 	// Update cache
 	riotapi.riotIds[puuid] = riotid
@@ -104,9 +106,9 @@ func (riotapi *RiotApi) GetPuuid(riotid RiotId) (Puuid, error) {
 	// Update cache
 	// Take care here because maybe I have an old riot id that I need to update
 	if _, ok := riotapi.riotIds[puuid]; ok {
-		fmt.Printf("Updating riot id %s for puuid %s", riotid, puuid)
+		log.Debug().Msg(fmt.Sprintf("Updating riot id %s for puuid %s", riotid, puuid))
 	} else {
-		fmt.Printf("Found puuid %s for riot id %s", puuid, riotid)
+		log.Debug().Msg(fmt.Sprintf("Found puuid %s for riot id %s", puuid, riotid))
 	}
 	riotapi.riotIds[puuid] = riotid
 
@@ -179,7 +181,7 @@ func (riotapi *RiotApi) GetSpectator(puuid Puuid) (Spectator, error) {
 	if err != nil {
 		return Spectator{}, fmt.Errorf("player with puuid %s is playing but their riot id is not found", puuid)
 	}
-	fmt.Printf("%s is playing", riotid)
+	log.Info().Msg(fmt.Sprintf("%s is playing", riotid))
 
 	// Decode game id and check if in cache
 	gameId, err := UnmarshalGameId(data)
@@ -187,7 +189,7 @@ func (riotapi *RiotApi) GetSpectator(puuid Puuid) (Spectator, error) {
 		return Spectator{}, err
 	}
 	if spectator, ok := riotapi.spectatorCache[gameId]; ok {
-		fmt.Printf("Player %s is in a cached game", &riotid)
+		log.Debug().Msg(fmt.Sprintf("Player %s is in a cached game", &riotid))
 		return spectator, nil
 	}
 
@@ -224,7 +226,7 @@ func (riotapi *RiotApi) getSummonerId(puuid Puuid) (SummonerId, error) {
 		return "", fmt.Errorf("summoner id not found among received data")
 	}
 	summonerId = raw.Id
-	fmt.Printf("Found summoner id %s for puuid %s", summonerId, puuid)
+	log.Debug().Msg(fmt.Sprintf("Found summoner id %s for puuid %s", summonerId, puuid))
 
 	// Update cache
 	riotapi.summonerIds[puuid] = summonerId
@@ -274,7 +276,7 @@ func (riotapi *RiotApi) trimSpectatorCache(puuid Puuid) {
 		delete(riotapi.spectatorCache, gameId)
 	}
 	if len(gameIds) > 0 {
-		fmt.Printf("Spectator cache trimmed to %d elements", len(riotapi.spectatorCache))
+		log.Info().Msg(fmt.Sprintf("Spectator cache trimmed to %d elements", len(riotapi.spectatorCache)))
 	}
 }
 
@@ -293,7 +295,7 @@ func (riotapi *RiotApi) GetGameIds(puuid Puuid) map[GameId]struct{} {
 	}
 
 	if len(gameIds) > 1 {
-		fmt.Printf("Found %d game ids for puuid %s in the cache", len(gameIds), puuid)
+		log.Error().Msg(fmt.Sprintf("Found %d game ids for puuid %s in the cache", len(gameIds), puuid))
 	}
 
 	return gameIds
@@ -302,7 +304,7 @@ func (riotapi *RiotApi) GetGameIds(puuid Puuid) map[GameId]struct{} {
 func (riotapi *RiotApi) request(url string) []byte {
 
 	vital := !strings.Contains(url, fmt.Sprintf(ROUTE_SPECTATOR, ""))
-	fmt.Printf("Request to url %s\n", url)
+	log.Debug().Msg(fmt.Sprintf("Requesting to url %s", url))
 	return riotapi.proxy.Request(url, vital)
 }
 
@@ -310,13 +312,13 @@ func (riotapi *RiotApi) Housekeeping(puuidsToKeep map[Puuid]struct{}) {
 
 	// Check patch version
 	if riotapi.checkPatchVersion() != nil {
-		fmt.Printf("Could not check patch version")
+		log.Info().Msg("Could not check patch version")
 		return
 	}
 
-	fmt.Printf("Current number of riot ids: %d", len(riotapi.riotIds))
-	fmt.Printf("Current number of summoner ids: %d", len(riotapi.summonerIds))
-	fmt.Printf("Keeping %d puuids", len(puuidsToKeep))
+	log.Info().Msg(fmt.Sprintf("Current number of riot ids: %d", len(riotapi.riotIds)))
+	log.Info().Msg(fmt.Sprintf("Current number of summoner ids: %d", len(riotapi.summonerIds)))
+	log.Info().Msg(fmt.Sprintf("Keeping %d puuids", len(puuidsToKeep)))
 
 	// Purge my memory first
 	// - remove all the riot ids
@@ -328,7 +330,7 @@ func (riotapi *RiotApi) Housekeeping(puuidsToKeep map[Puuid]struct{}) {
 		// Get a new riot id and add to the map
 		riotid, err := riotapi.GetRiotId(puuid)
 		if err != nil {
-			fmt.Printf("Could not find riot id for puuid %s", puuid)
+			log.Error().Err(err)
 			continue
 		}
 
@@ -363,7 +365,7 @@ func (riotapi *RiotApi) checkPatchVersion() error {
 		return fmt.Errorf("%s file does not have the expected content", VERSIONS_JSON)
 	}
 	latestVersion := versions[0]
-	fmt.Printf("Latest patch available in dd is %s", latestVersion)
+	log.Info().Msg(fmt.Sprintf("Latest patch available in dd is %s", latestVersion))
 
 	// Check which version the EUW is sitting on
 	url = REALM
@@ -380,7 +382,7 @@ func (riotapi *RiotApi) checkPatchVersion() error {
 		}
 		realmVersion = realmsEuw.Dd
 	}
-	fmt.Printf("Realm patch version for EUW is %s", realmVersion)
+	log.Info().Msg(fmt.Sprintf("Realm patch version for EUW is %s", realmVersion))
 
 	// The EUW version should at least exist among the overall versions
 	var found bool = false
@@ -398,20 +400,20 @@ func (riotapi *RiotApi) checkPatchVersion() error {
 	// so the new version for this API is clear
 	// Do some logging
 	if realmVersion == latestVersion {
-		fmt.Printf("EUW realm is on the latest version")
+		log.Info().Msg("EUW realm is on the latest version")
 	} else {
-		fmt.Printf("EUW realm is on version %s while the latest version is %s", realmVersion, latestVersion)
+		log.Info().Msg(fmt.Sprintf("EUW realm is on version %s while the latest version is %s", realmVersion, latestVersion))
 	}
 
 	// If the new version is different from the one currently in use,
 	// invalidate my data to redownload when needed
 	if riotapi.version != realmVersion {
-		fmt.Printf("Internal version %s is not in line with new version %s", riotapi.version, realmVersion)
+		log.Info().Msg(fmt.Sprintf("Internal version (%s) is not in line with new version (%s)", riotapi.version, realmVersion))
 		riotapi.version = realmVersion
 		riotapi.database.SetVersion(realmVersion)
 		riotapi.champions = make(map[ChampionId]string)
 	} else {
-		fmt.Printf("Internal version is in line with the new version. Nothing to do")
+		log.Info().Msg("Internal version is in line with the new version. Nothing to do")
 	}
 
 	return nil

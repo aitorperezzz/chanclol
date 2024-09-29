@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/rs/zerolog/log"
 )
 
 type Analysis struct {
@@ -21,7 +22,7 @@ type RateLimiter struct {
 	stopwatch            Stopwatch
 }
 
-func CreateRateLimiter(restrictions []Restriction) RateLimiter {
+func NewRateLimiter(restrictions []Restriction) RateLimiter {
 	rl := RateLimiter{}
 	// Restrictions are just a copy of the provided ones
 	copy(rl.restrictions, restrictions)
@@ -52,7 +53,7 @@ func (rl *RateLimiter) Allowed(vital bool, allowed chan bool) {
 		analysis := rl.analyse()
 		if analysis.allowed {
 			if vital || (!vital && len(rl.pendingVitalRequests) == 0) {
-				fmt.Println("Allowing request")
+				log.Debug().Msg("Allowing request")
 				// Remove the uuid in case it is there
 				for uuid := range rl.pendingVitalRequests {
 					if thisuuid == uuid {
@@ -67,12 +68,12 @@ func (rl *RateLimiter) Allowed(vital bool, allowed chan bool) {
 			} else {
 				// Request is not vital and the queue is not empty,
 				// so we have to reject the request
-				fmt.Println("Rejecting non vital request because restrictions allow it but vital queue is not empty")
+				log.Warn().Msg("Rejecting non vital request because restrictions allow it but vital queue is not empty")
 				allowed <- false
 				return
 			}
 		} else if !vital {
-			fmt.Println("Rejecting a non vital request because restrictions do not allow it")
+			log.Warn().Msg("Rejecting a non vital request because restrictions do not allow it")
 			allowed <- false
 			return
 		} else {
@@ -83,7 +84,7 @@ func (rl *RateLimiter) Allowed(vital bool, allowed chan bool) {
 				rl.pendingVitalRequests[thisuuid] = struct{}{}
 			}
 			// and sleep for some time
-			fmt.Println("Vital request", thisuuid, "delayed", analysis.wait.Seconds(), "seconds")
+			log.Warn().Msg(fmt.Sprint("Vital request", thisuuid, "delayed", analysis.wait.Seconds(), "seconds"))
 			go func() {
 				time.Sleep(analysis.wait)
 			}()

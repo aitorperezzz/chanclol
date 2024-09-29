@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -42,6 +44,9 @@ func main() {
 
 	// Configure logger
 	// TODO: read log level from config file
+	zerolog.CallerMarshalFunc = func(pc uintptr, file string, line int) string {
+		return filepath.Base(file) + ":" + strconv.Itoa(line)
+	}
 	zerolog.SetGlobalLevel(zerolog.DebugLevel)
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr}).With().Caller().Logger()
 
