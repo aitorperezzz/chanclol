@@ -457,7 +457,7 @@ func (bot *Bot) selectPlayerToCheck() (riotapi.Puuid, bool) {
 				log.Debug().Msg(fmt.Sprintf("%s: player has been checked more recently", &riotid))
 			}
 		} else {
-			log.Debug().Msg(fmt.Sprintf("%s timeout still not reached", &riotid))
+			log.Debug().Msg(fmt.Sprintf("%s: timeout still not reached", &riotid))
 		}
 	}
 	// We have selected the best option to check
