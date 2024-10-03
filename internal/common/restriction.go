@@ -13,23 +13,33 @@ type Restriction struct {
 // if a new request at the current time should be allowed or not
 func (rest *Restriction) Analyse(history []time.Time) Analysis {
 
-	// Compute the number of requests that have been served in my duration.
+	// If there is no history, simply allow
+	if len(history) == 0 {
+		return Analysis{allowed: true}
+	}
+
+	// Count the number of requests that have been served in my duration.
 	// Start counting from the end.
 	// If one request is too old, the rest will be too
 	currentTime := time.Now()
 	count := 0
 	for i := len(history) - 1; i >= 0; i-- {
-		if currentTime.Sub(history[i]) > rest.Duration {
+		if history[i].Add(rest.Duration).Before(currentTime) {
 			break
 		} else {
 			count++
 		}
 	}
-	oldestRequestTime := history[len(history)-count]
+	// If there are no requests served in my duration, simply allow
+	if count == 0 {
+		return Analysis{allowed: true}
+	}
 
-	// Return the result of the analysis
+	// Finally decide
+	oldestRequestTime := history[len(history)-count]
 	if count >= rest.Requests {
-		return Analysis{false, oldestRequestTime.Sub(currentTime.Add(-rest.Duration))}
+		// I need to wait at least until the oldest request exits my duration
+		return Analysis{false, oldestRequestTime.Sub(currentTime.Add(-rest.Duration)) + time.Duration(10*time.Millisecond)}
 	} else {
 		return Analysis{true, 0}
 	}

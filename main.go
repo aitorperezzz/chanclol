@@ -71,7 +71,7 @@ func main() {
 
 	// Create riot API
 	log.Info().Msg("Creating riot API")
-	restrictions := make([]common.Restriction, len(config.Restrictions))
+	restrictions := make([]common.Restriction, 0)
 	for _, restriction := range config.Restrictions {
 		restrictionDuration := time.Duration(int64(restriction.IntervalSeconds) * int64(time.Second))
 		restrictions = append(restrictions, common.Restriction{Requests: restriction.NumRequests, Duration: restrictionDuration})

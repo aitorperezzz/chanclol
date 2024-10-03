@@ -26,6 +26,7 @@ type RateLimiter struct {
 func NewRateLimiter(restrictions []Restriction) RateLimiter {
 	rl := RateLimiter{}
 	// Restrictions are just a copy of the provided ones
+	rl.restrictions = make([]Restriction, len(restrictions))
 	copy(rl.restrictions, restrictions)
 	// Duration
 	rl.duration = math.MinInt
@@ -47,6 +48,10 @@ func NewRateLimiter(restrictions []Restriction) RateLimiter {
 // will block here until it is allowed
 func (rl *RateLimiter) Allowed(vital bool, allowed chan bool) {
 
+	logNumDelayedVitalRequests := func() {
+		log.Debug().Msg(fmt.Sprint("Number of delayed vital requests: ", len(rl.pendingVitalRequests)))
+	}
+
 	// Give this request a unique identifier
 	thisuuid := uuid.New()
 	for {
@@ -61,6 +66,8 @@ func (rl *RateLimiter) Allowed(vital bool, allowed chan bool) {
 				for uuid := range rl.pendingVitalRequests {
 					if thisuuid == uuid {
 						delete(rl.pendingVitalRequests, thisuuid)
+						log.Warn().Msg(fmt.Sprint("Serving delayed vital request ", thisuuid))
+						logNumDelayedVitalRequests()
 					}
 				}
 				// Include this request in the history as it is allowed
@@ -87,8 +94,8 @@ func (rl *RateLimiter) Allowed(vital bool, allowed chan bool) {
 				rl.pendingVitalRequests[thisuuid] = struct{}{}
 			}
 			// and sleep for some time
-			log.Warn().Msg(fmt.Sprint("Vital request ", thisuuid, " delayed ", int(analysis.wait.Seconds()), " seconds"))
-			log.Warn().Msg(fmt.Sprint("Number of delayed vital requests: ", len(rl.pendingVitalRequests)))
+			log.Warn().Msg(fmt.Sprint("Vital request ", thisuuid, " delayed ", analysis.wait))
+			logNumDelayedVitalRequests()
 			var wg sync.WaitGroup
 			wg.Add(1)
 			go func() {
