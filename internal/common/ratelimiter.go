@@ -3,6 +3,7 @@ package common
 import (
 	"fmt"
 	"math"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -33,6 +34,8 @@ func NewRateLimiter(restrictions []Restriction) RateLimiter {
 			rl.duration = restrictions[i].Duration
 		}
 	}
+	// Initialise pending requests
+	rl.pendingVitalRequests = make(map[uuid.UUID]struct{})
 	// Initialise a stopwatch
 	rl.stopwatch.Timeout = rl.duration
 
@@ -84,15 +87,21 @@ func (rl *RateLimiter) Allowed(vital bool, allowed chan bool) {
 				rl.pendingVitalRequests[thisuuid] = struct{}{}
 			}
 			// and sleep for some time
-			log.Warn().Msg(fmt.Sprint("Vital request", thisuuid, "delayed", analysis.wait.Seconds(), "seconds"))
+			log.Warn().Msg(fmt.Sprint("Vital request ", thisuuid, " delayed ", int(analysis.wait.Seconds()), " seconds"))
+			log.Warn().Msg(fmt.Sprint("Number of delayed vital requests: ", len(rl.pendingVitalRequests)))
+			var wg sync.WaitGroup
+			wg.Add(1)
 			go func() {
+				defer wg.Done()
 				time.Sleep(analysis.wait)
 			}()
+			wg.Wait()
 		}
 	}
 }
 
 func (rl *RateLimiter) ReceivedRateLimit() {
+	log.Warn().Msg("Received rate limit")
 	rl.stopwatch.Start()
 }
 
@@ -128,6 +137,19 @@ func (rl *RateLimiter) analyse() Analysis {
 		allowed = allowed && analysis.allowed
 		if analysis.wait > wait {
 			wait = analysis.wait
+		}
+	}
+	// If the rate limiting stopwatch is running, we will need to wait in any case
+	if rl.stopwatch.Running {
+		stopped, duration := rl.stopwatch.Stopped()
+		if stopped {
+			// Timeout has been completed, so end the stopwatch
+			rl.stopwatch.Stop()
+		} else {
+			// Timeout is active, we need to wait
+			log.Warn().Msg(fmt.Sprint("Need to wait ", int(duration.Seconds()), " seconds"))
+			wait = duration
+			allowed = false
 		}
 	}
 	return Analysis{allowed, wait}

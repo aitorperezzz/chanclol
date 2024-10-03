@@ -20,7 +20,7 @@ func NewTimedExecutor(timeout time.Duration, task func()) TimedExecutor {
 
 // Execute the task if the timeout has been reached, else do nothing
 func (te *TimedExecutor) Execute() {
-	if te.stopwatch.TimeStopped() > 0 {
+	if stopped, _ := te.stopwatch.Stopped(); stopped {
 		te.stopwatch.Start()
 		te.task()
 	}

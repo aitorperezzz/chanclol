@@ -25,15 +25,15 @@ func (s *Stopwatch) Stop() {
 	s.Running = false
 }
 
-// Return the time elapsed since this stopwatch
-// stopped (reached its timeout).
-// Note that if the number is zero, the timeout still
-// has not been reached
-func (s *Stopwatch) TimeStopped() time.Duration {
+// Return a boolean indicating if the stopwatch is already stopped.
+// Additionally, return a duration:
+// - If stopped, the duration signifies the time the stopwatch has been stopped
+// - If not stopped, the duration signifies the time needed for the stopwatch to stop
+func (s *Stopwatch) Stopped() (bool, time.Duration) {
 	currentTime := time.Now()
 	if s.startTime.Add(s.Timeout).Before(currentTime) {
-		return currentTime.Sub(s.startTime.Add(s.Timeout))
+		return true, currentTime.Sub(s.startTime.Add(s.Timeout))
 	} else {
-		return 0
+		return false, s.startTime.Add(s.Timeout).Sub(currentTime)
 	}
 }

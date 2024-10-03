@@ -441,22 +441,22 @@ func (bot *Bot) selectPlayerToCheck() (riotapi.Puuid, bool) {
 			panic(err)
 		}
 		// Time the stopwatch has been stopped for this player
-		timeStopped := player.StopWatch.TimeStopped()
-		if timeStopped > 0 {
-			if timeStopped > longestTimeStopped {
+		stopped, elapsed := player.StopWatch.Stopped()
+		if stopped {
+			if elapsed > longestTimeStopped {
 				// This player is available to be checked,
 				// and has been stopped more than the others,
 				// so it's our best candidate
-				log.Debug().Msg(fmt.Sprintf("%s: player has been stopped for longer", &riotid))
-				longestTimeStopped = timeStopped
+				log.Debug().Msg(fmt.Sprintf("- %s: player has been stopped for longer", &riotid))
+				longestTimeStopped = elapsed
 				puuid = player.id
 			} else {
 				// This player is available to check, but has been checked
 				// more recently than others
-				log.Debug().Msg(fmt.Sprintf("%s: player has been checked more recently", &riotid))
+				log.Debug().Msg(fmt.Sprintf("- %s: player has been checked more recently", &riotid))
 			}
 		} else {
-			log.Debug().Msg(fmt.Sprintf("%s: timeout still not reached", &riotid))
+			log.Debug().Msg(fmt.Sprintf("- %s: timeout still not reached", &riotid))
 		}
 	}
 	// We have selected the best option to check
