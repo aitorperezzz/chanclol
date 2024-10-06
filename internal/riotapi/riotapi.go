@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/rs/zerolog/log"
 )
@@ -29,34 +30,43 @@ const ROUTE_SPECTATOR = "/lol/spectator/v5/active-games/by-summoner/%s"
 const ROUTE_CHAMPIONS = "http://ddragon.leagueoflegends.com/cdn/%s/data/en_US/champion.json"
 
 type RiotApi struct {
-	database       DatabaseRiotApi
-	champions      map[ChampionId]string
-	riotIds        map[Puuid]RiotId
-	summonerIds    map[Puuid]SummonerId
+	database  DatabaseRiotApi
+	champions struct {
+		champions map[ChampionId]string
+		mutex     sync.Mutex
+	}
+	riotIds struct {
+		riotIds map[Puuid]RiotId
+		mutex   sync.Mutex
+	}
+	summonerIds struct {
+		summonerIds map[Puuid]SummonerId
+		mutex       sync.Mutex
+	}
 	version        string
 	proxy          common.Proxy
 	spectatorCache map[GameId]Spectator
 }
 
-func NewRiotApi(dbFilename string, apiKey string, restrictions []common.Restriction) RiotApi {
+func NewRiotApi(dbFilename string, apiKey string, restrictions []common.Restriction) *RiotApi {
 
-	var riotapi RiotApi
+	riotapi := RiotApi{}
 
 	riotapi.database = CreatDatabaseRiotApi(dbFilename)
-	riotapi.champions = riotapi.database.GetChampions()
-	riotapi.riotIds = riotapi.database.GetRiotIds()
-	riotapi.summonerIds = riotapi.database.GetSummonerIds()
+	riotapi.champions.champions = riotapi.database.GetChampions()
+	riotapi.riotIds.riotIds = riotapi.database.GetRiotIds()
+	riotapi.summonerIds.summonerIds = riotapi.database.GetSummonerIds()
 	riotapi.version = riotapi.database.GetVersion()
 	riotapi.proxy = common.NewProxy(map[string]string{"X-Riot-Token": apiKey}, restrictions)
 	riotapi.spectatorCache = map[GameId]Spectator{}
 
-	return riotapi
+	return &riotapi
 }
 
 func (riotapi *RiotApi) GetRiotId(puuid Puuid) (RiotId, error) {
 
 	// Check cache
-	if riotid, ok := riotapi.riotIds[puuid]; ok {
+	if riotid, ok := riotapi.CacheGetRiotId(puuid); ok {
 		return riotid, nil
 	}
 	log.Debug().Msg(fmt.Sprintf("Riot id for puuid %s is not in the cache", puuid))
@@ -76,15 +86,15 @@ func (riotapi *RiotApi) GetRiotId(puuid Puuid) (RiotId, error) {
 	log.Debug().Msg(fmt.Sprintf("Found riot id %s for puuid %s", riotid, puuid))
 
 	// Update cache
-	riotapi.riotIds[puuid] = riotid
-	riotapi.database.SetRiotId(puuid, riotid)
+	riotapi.CacheSetRiotId(puuid, riotid)
+
 	return riotid, nil
 }
 
 func (riotapi *RiotApi) GetPuuid(riotid RiotId) (Puuid, error) {
 
 	// Check cache
-	for key, value := range riotapi.riotIds {
+	for key, value := range riotapi.riotIds.riotIds {
 		if value == riotid {
 			return key, nil
 		}
@@ -105,26 +115,26 @@ func (riotapi *RiotApi) GetPuuid(riotid RiotId) (Puuid, error) {
 
 	// Update cache
 	// Take care here because maybe I have an old riot id that I need to update
-	if _, ok := riotapi.riotIds[puuid]; ok {
+	if _, ok := riotapi.CacheGetRiotId(puuid); ok {
 		log.Debug().Msg(fmt.Sprintf("Updating riot id %s for puuid %s", riotid, puuid))
 	} else {
 		log.Debug().Msg(fmt.Sprintf("Found puuid %s for riot id %s", puuid, riotid))
 	}
-	riotapi.riotIds[puuid] = riotid
-
-	// Database
-	riotapi.database.SetRiotId(puuid, riotid)
+	riotapi.CacheSetRiotId(puuid, riotid)
 
 	return puuid, nil
 }
 
 func (riotapi *RiotApi) GetChampionName(championId ChampionId) (string, error) {
 
-	if len(riotapi.champions) == 0 {
+	riotapi.champions.mutex.Lock()
+	defer riotapi.champions.mutex.Unlock()
+
+	if len(riotapi.champions.champions) == 0 {
 		riotapi.getChampionData()
 	}
 
-	championName, ok := riotapi.champions[championId]
+	championName, ok := riotapi.champions.champions[championId]
 	if !ok {
 		return "", fmt.Errorf("could not find champion name for champion id %d", championId)
 	}
@@ -215,8 +225,7 @@ func (riotapi *RiotApi) GetSpectator(puuid Puuid) (Spectator, error) {
 func (riotapi *RiotApi) getSummonerId(puuid Puuid) (SummonerId, error) {
 
 	// Check cache
-	summonerId, ok := riotapi.summonerIds[puuid]
-	if ok {
+	if summonerId, ok := riotapi.CacheGetSummonerId(puuid); ok {
 		return summonerId, nil
 	}
 
@@ -230,12 +239,12 @@ func (riotapi *RiotApi) getSummonerId(puuid Puuid) (SummonerId, error) {
 	if json.Unmarshal(data, &raw) != nil {
 		return "", fmt.Errorf("summoner id not found among received data")
 	}
-	summonerId = raw.Id
+	summonerId := raw.Id
 	log.Debug().Msg(fmt.Sprintf("Found summoner id %s for puuid %s", summonerId, puuid))
 
 	// Update cache
-	riotapi.summonerIds[puuid] = summonerId
-	riotapi.database.SetSummonerId(puuid, summonerId)
+	riotapi.CacheSetSummonerId(puuid, summonerId)
+
 	return summonerId, nil
 }
 
@@ -264,12 +273,12 @@ func (riotapi *RiotApi) getChampionData() error {
 		if championId, err := strconv.Atoi(champion.Key); err != nil {
 			return fmt.Errorf("champion id is not correctly formatted in response: %s", champion.Key)
 		} else {
-			riotapi.champions[ChampionId(championId)] = champion.Id
+			riotapi.champions.champions[ChampionId(championId)] = champion.Id
 		}
 	}
 
 	// Database
-	riotapi.database.SetChampions(riotapi.champions)
+	riotapi.database.SetChampions(riotapi.champions.champions)
 
 	return nil
 }
@@ -282,6 +291,42 @@ func (riotapi *RiotApi) trimSpectatorCache(puuid Puuid) {
 	}
 	if len(gameIds) > 0 {
 		log.Info().Msg(fmt.Sprintf("Spectator cache trimmed to %d elements", len(riotapi.spectatorCache)))
+	}
+}
+
+func (riotapi *RiotApi) CacheSetRiotId(puuid Puuid, riotid RiotId) {
+
+	riotapi.riotIds.mutex.Lock()
+	defer riotapi.riotIds.mutex.Unlock()
+
+	riotapi.riotIds.riotIds[puuid] = riotid
+	riotapi.database.SetRiotId(puuid, riotid)
+}
+
+func (riotapi *RiotApi) CacheGetRiotId(puuid Puuid) (RiotId, bool) {
+
+	if riotid, ok := riotapi.riotIds.riotIds[puuid]; ok {
+		return riotid, true
+	} else {
+		return RiotId{}, false
+	}
+}
+
+func (riotapi *RiotApi) CacheSetSummonerId(puuid Puuid, summonerId SummonerId) {
+
+	riotapi.summonerIds.mutex.Lock()
+	defer riotapi.summonerIds.mutex.Unlock()
+
+	riotapi.summonerIds.summonerIds[puuid] = summonerId
+	riotapi.database.SetSummonerId(puuid, summonerId)
+}
+
+func (riotapi *RiotApi) CacheGetSummonerId(puuid Puuid) (SummonerId, bool) {
+
+	if summonerid, ok := riotapi.summonerIds.summonerIds[puuid]; ok {
+		return summonerid, true
+	} else {
+		return "", false
 	}
 }
 
@@ -321,15 +366,15 @@ func (riotapi *RiotApi) Housekeeping(puuidsToKeep map[Puuid]struct{}) {
 		return
 	}
 
-	log.Info().Msg(fmt.Sprintf("Current number of riot ids: %d", len(riotapi.riotIds)))
-	log.Info().Msg(fmt.Sprintf("Current number of summoner ids: %d", len(riotapi.summonerIds)))
+	log.Info().Msg(fmt.Sprintf("Current number of riot ids: %d", len(riotapi.riotIds.riotIds)))
+	log.Info().Msg(fmt.Sprintf("Current number of summoner ids: %d", len(riotapi.summonerIds.summonerIds)))
 	log.Info().Msg(fmt.Sprintf("Keeping %d puuids", len(puuidsToKeep)))
 
 	// Purge my memory first
 	// - remove all the riot ids
 	// - add the riot ids that we need to keep, with the latest values provided by riot
 	// - remove the summoner ids that are not needed
-	riotapi.riotIds = make(map[Puuid]RiotId, len(puuidsToKeep))
+	riotapi.riotIds.riotIds = make(map[Puuid]RiotId, len(puuidsToKeep))
 	for puuid := range puuidsToKeep {
 
 		// Get a new riot id and add to the map
@@ -339,18 +384,18 @@ func (riotapi *RiotApi) Housekeeping(puuidsToKeep map[Puuid]struct{}) {
 			continue
 		}
 
-		riotapi.riotIds[puuid] = riotid
+		riotapi.riotIds.riotIds[puuid] = riotid
 	}
 
-	for puuid := range riotapi.summonerIds {
+	for puuid := range riotapi.summonerIds.summonerIds {
 		if _, ok := puuidsToKeep[puuid]; !ok {
-			delete(riotapi.summonerIds, puuid)
+			delete(riotapi.summonerIds.summonerIds, puuid)
 		}
 	}
 
 	// Send the final values to the database
-	riotapi.database.SetRiotIds(riotapi.riotIds)
-	riotapi.database.SetSummonerIds(riotapi.summonerIds)
+	riotapi.database.SetRiotIds(riotapi.riotIds.riotIds)
+	riotapi.database.SetSummonerIds(riotapi.summonerIds.summonerIds)
 }
 
 // Fetches the latest version of the data dragon available, and checks the version
@@ -416,7 +461,7 @@ func (riotapi *RiotApi) checkPatchVersion() error {
 		log.Info().Msg(fmt.Sprintf("Internal version (%s) is not in line with new version (%s)", riotapi.version, realmVersion))
 		riotapi.version = realmVersion
 		riotapi.database.SetVersion(realmVersion)
-		riotapi.champions = make(map[ChampionId]string)
+		riotapi.champions.champions = make(map[ChampionId]string)
 	} else {
 		log.Info().Msg("Internal version is in line with the new version. Nothing to do")
 	}

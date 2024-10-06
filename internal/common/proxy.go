@@ -41,7 +41,7 @@ var messages = map[int]string{
 type Proxy struct {
 	header      map[string]string
 	client      http.Client
-	rateLimiter RateLimiter
+	rateLimiter *RateLimiter
 }
 
 func NewProxy(header map[string]string, restrictions []Restriction) Proxy {

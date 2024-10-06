@@ -85,7 +85,7 @@ func main() {
 	offlineTimeout := time.Duration(int64(config.OfflineTimeoutSecs) * int64(time.Second))
 	onlineTimeout := time.Duration(int64(config.OnlineTimeoutSecs) * int64(time.Second))
 	mainCycle := time.Duration(int64(config.MainLoopCycleSecs) * int64(time.Second))
-	bot, err := bot.NewBot(discordToken, config.BotDbFilename, riotapiHousekeeping, offlineThreshold, offlineTimeout, onlineTimeout, mainCycle, &riotapi)
+	bot, err := bot.NewBot(discordToken, config.BotDbFilename, riotapiHousekeeping, offlineThreshold, offlineTimeout, onlineTimeout, mainCycle, riotapi)
 	if err != nil {
 		log.Error().Msg("Could not create discord bot")
 		return

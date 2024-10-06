@@ -20,11 +20,13 @@ type RateLimiter struct {
 	history              []time.Time            // History of requests
 	duration             time.Duration          // Min duration to wait for all restrictions to be lifted
 	pendingVitalRequests map[uuid.UUID]struct{} // Set of pending vital requests
-	stopwatch            Stopwatch
+	stopwatch            Stopwatch              // Stopwatch to use when I receive a rate limit (which should almost never happen)
+	mutex                sync.Mutex             // Mutex to sync how different threads access my request history
 }
 
-func NewRateLimiter(restrictions []Restriction) RateLimiter {
-	rl := RateLimiter{}
+func NewRateLimiter(restrictions []Restriction) *RateLimiter {
+
+	rl := &RateLimiter{}
 	// Restrictions are just a copy of the provided ones
 	rl.restrictions = make([]Restriction, len(restrictions))
 	copy(rl.restrictions, restrictions)
@@ -47,6 +49,9 @@ func NewRateLimiter(restrictions []Restriction) RateLimiter {
 // If the request is not allowed but vital, execution
 // will block here until it is allowed
 func (rl *RateLimiter) Allowed(vital bool, allowed chan bool) {
+
+	rl.mutex.Lock()
+	defer rl.mutex.Unlock()
 
 	logNumDelayedVitalRequests := func() {
 		log.Debug().Msg(fmt.Sprint("Number of delayed vital requests: ", len(rl.pendingVitalRequests)))
@@ -131,22 +136,7 @@ func (rl *RateLimiter) trim() {
 
 func (rl *RateLimiter) analyse() Analysis {
 
-	// Perform an analysis for each of the restrictions
-	analyses := make([]Analysis, 0)
-	for _, restriction := range rl.restrictions {
-		analyses = append(analyses, restriction.Analyse(rl.history))
-	}
-
-	// Merge the analyses and return
-	var wait time.Duration = 0
-	allowed := true
-	for _, analysis := range analyses {
-		allowed = allowed && analysis.allowed
-		if analysis.wait > wait {
-			wait = analysis.wait
-		}
-	}
-	// If the rate limiting stopwatch is running, we will need to wait in any case
+	// If the rate limiting stopwatch is running, we need to check if it's already over
 	if rl.stopwatch.Running {
 		stopped, duration := rl.stopwatch.Stopped()
 		if stopped {
@@ -155,9 +145,26 @@ func (rl *RateLimiter) analyse() Analysis {
 		} else {
 			// Timeout is active, we need to wait
 			log.Warn().Msg(fmt.Sprint("Need to wait ", int(duration.Seconds()), " seconds"))
-			wait = duration
-			allowed = false
+			return Analysis{allowed: false, wait: duration}
 		}
 	}
-	return Analysis{allowed, wait}
+
+	// Perform an analysis of each of the restrictions
+	analyses := make([]Analysis, 0)
+	for _, restriction := range rl.restrictions {
+		analyses = append(analyses, restriction.Analyse(&rl.history))
+	}
+
+	// Merge all analyses
+	var wait time.Duration = 0
+	allowed := true
+	for _, analysis := range analyses {
+		allowed = allowed && analysis.allowed
+		if analysis.wait > wait {
+			wait = analysis.wait
+		}
+	}
+
+	// Return the merged analysis
+	return Analysis{allowed: allowed, wait: wait}
 }
