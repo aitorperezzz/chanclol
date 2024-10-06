@@ -3,6 +3,8 @@ package riotapi
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -75,6 +77,8 @@ func UnmarshalSpectator(data []byte, riotapi *RiotApi) (Spectator, error) {
 		GameLength   int64
 		Participants []struct {
 			Puuid      Puuid
+			RiotId     string
+			SummonerId SummonerId
 			ChampionId ChampionId
 			TeamId     int
 		}
@@ -84,44 +88,75 @@ func UnmarshalSpectator(data []byte, riotapi *RiotApi) (Spectator, error) {
 	}
 
 	// teams
+	type ParticipantResult struct {
+		Participant Participant
+		TeamId      int
+		Error       error
+	}
+	participantResults := make(chan ParticipantResult, len(raw.Participants))
+	var wg sync.WaitGroup
+	for _, rawPart := range raw.Participants {
+
+		wg.Add(1)
+		go func(ch chan<- ParticipantResult) {
+
+			defer wg.Done()
+
+			var err error
+
+			// Extract data
+
+			// riotid
+			// Extract the riot id from participant data
+			index := strings.Index(rawPart.RiotId, "#")
+			if index == -1 {
+				ch <- ParticipantResult{Error: fmt.Errorf("Riot id not correctly formatted inside participant data")}
+				return
+			}
+			riotid := RiotId{GameName: rawPart.RiotId[:index], TagLine: rawPart.RiotId[index+1:]}
+
+			// Request data
+
+			// champion name
+			var championName string
+			if championName, err = riotapi.GetChampionName(rawPart.ChampionId); err != nil {
+				ch <- ParticipantResult{Error: err}
+				return
+			}
+
+			// champion mastery
+			// TODO: I cannot distinguish if mastery is not available or
+			// I have a problem connecting to riot API
+			var mastery Mastery
+			if mastery, err = riotapi.GetMastery(rawPart.Puuid, rawPart.ChampionId); err != nil {
+				log.Debug().Msg(fmt.Sprintf("Mastery not available for puuid %s", string(rawPart.Puuid)))
+			}
+
+			// league
+			var leagues []League
+			if leagues, err = riotapi.GetLeaguesSummonerId(rawPart.SummonerId); err != nil {
+				ch <- ParticipantResult{Error: err}
+				return
+			}
+
+			participant := Participant{Puuid: rawPart.Puuid, Riotid: riotid, ChampionName: championName, Mastery: mastery, Leagues: leagues}
+
+			// Return the participant to the channel
+			ch <- ParticipantResult{Participant: participant, TeamId: rawPart.TeamId, Error: nil}
+
+		}(participantResults)
+
+	}
+	wg.Wait()
+	close(participantResults)
+
+	// Gather all participants into a map of teams, and return early if an error was found
 	teams := Teams{}
-	for _, part := range raw.Participants {
-
-		var err error
-
-		// Request all the necessary data for this participant
-
-		// riotid
-		// TODO: the riot id is already present in the participant data
-		var riotid RiotId
-		if riotid, err = riotapi.GetRiotId(part.Puuid); err != nil {
-			return Spectator{}, err
+	for result := range participantResults {
+		if result.Error != nil {
+			return Spectator{}, result.Error
 		}
-
-		// champion name
-		var championName string
-		if championName, err = riotapi.GetChampionName(part.ChampionId); err != nil {
-			return Spectator{}, err
-		}
-
-		// champion mastery
-		// TODO: I cannot distinguish if mastery is not available or
-		// I have a problem connecting to riot API
-		var mastery Mastery
-		if mastery, err = riotapi.GetMastery(part.Puuid, part.ChampionId); err != nil {
-			log.Debug().Msg(fmt.Sprintf("Mastery not available for puuid %s", string(part.Puuid)))
-		}
-
-		// league
-		var leagues []League
-		if leagues, err = riotapi.GetLeagues(part.Puuid); err != nil {
-			return Spectator{}, err
-		}
-
-		participant := Participant{Puuid: part.Puuid, Riotid: riotid, ChampionName: championName, Mastery: mastery, Leagues: leagues}
-
-		// Add participant to the team
-		teams[part.TeamId] = append(teams[part.TeamId], participant)
+		teams[result.TeamId] = append(teams[result.TeamId], result.Participant)
 	}
 
 	return Spectator{GameId: raw.GameId, GameMode: raw.GameMode, GameLength: time.Duration(raw.GameLength * int64(time.Second)), Teams: teams}, nil

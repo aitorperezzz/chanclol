@@ -252,7 +252,7 @@ func (bot *Bot) register(riotid riotapi.RiotId, guild *Guild) []Response {
 	}
 
 	// Get rank of this player
-	leagues, err := bot.riotapi.GetLeagues(puuid)
+	leagues, err := bot.riotapi.GetLeaguesPuuid(puuid)
 	if err != nil {
 		log.Info().Err(err)
 		return NoResponseRiotApi(riotid)
@@ -318,7 +318,7 @@ func (bot *Bot) rank(riotid riotapi.RiotId) []Response {
 	}
 
 	// Get the rank of this player
-	leagues, err := bot.riotapi.GetLeagues(puuid)
+	leagues, err := bot.riotapi.GetLeaguesPuuid(puuid)
 	if err != nil {
 		log.Info().Err(err)
 		return NoResponseRiotApi(riotid)

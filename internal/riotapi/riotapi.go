@@ -144,19 +144,13 @@ func (riotapi *RiotApi) GetMastery(puuid Puuid, championId ChampionId) (Mastery,
 	return UnmarshalMastery(data)
 }
 
-func (riotapi *RiotApi) GetLeagues(puuid Puuid) ([]League, error) {
-
-	// Summoner id
-	summonerId, err := riotapi.getSummonerId(puuid)
-	if err != nil {
-		return nil, fmt.Errorf("could not find summoner id for puuid %s", puuid)
-	}
+func (riotapi *RiotApi) GetLeaguesSummonerId(summonerId SummonerId) ([]League, error) {
 
 	// Request
 	url := fmt.Sprintf(RIOT_SCHEMA, "euw1") + fmt.Sprintf(ROUTE_LEAGUE, summonerId)
 	data := riotapi.request(url)
 	if data == nil {
-		return nil, fmt.Errorf("no leagues found for puuid %s", puuid)
+		return nil, fmt.Errorf("no leagues found for summoner id %s", summonerId)
 	}
 
 	leagues, err := UnmarshalLeagues(data)
@@ -165,6 +159,17 @@ func (riotapi *RiotApi) GetLeagues(puuid Puuid) ([]League, error) {
 	}
 
 	return leagues, nil
+}
+
+func (riotapi *RiotApi) GetLeaguesPuuid(puuid Puuid) ([]League, error) {
+
+	// Summoner id
+	summonerId, err := riotapi.getSummonerId(puuid)
+	if err != nil {
+		return nil, fmt.Errorf("could not find summoner id for puuid %s", puuid)
+	}
+
+	return riotapi.GetLeaguesSummonerId(summonerId)
 }
 
 func (riotapi *RiotApi) GetSpectator(puuid Puuid) (Spectator, error) {
