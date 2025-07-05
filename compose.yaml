@@ -1,5 +1,6 @@
 services:
   bot:
+    restart: unless-stopped
     build: .
     volumes:
       - type: bind
