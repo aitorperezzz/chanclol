@@ -20,8 +20,7 @@ const REALM = "https://ddragon.leagueoflegends.com/realms/euw.json"
 // Routes inside the riot API
 const ROUTE_ACCOUNT_PUUID = "/riot/account/v1/accounts/by-riot-id/%s/%s"
 const ROUTE_ACCOUNT_RIOT_ID = "/riot/account/v1/accounts/by-puuid/%s"
-const ROUTE_SUMMONER = "/lol/summoner/v4/summoners/by-puuid/%s"
-const ROUTE_LEAGUE = "/lol/league/v4/entries/by-summoner/%s"
+const ROUTE_LEAGUE = "/lol/league/v4/entries/by-puuid/%s"
 const ROUTE_MASTERY = "/lol/champion-mastery/v4/champion-masteries/by-puuid/%s/by-champion/%d"
 const ROUTE_SPECTATOR = "/lol/spectator/v5/active-games/by-summoner/%s"
 
@@ -32,7 +31,6 @@ type RiotApi struct {
 	database       DatabaseRiotApi
 	champions      map[ChampionId]string
 	riotIds        map[Puuid]RiotId
-	summonerIds    map[Puuid]SummonerId
 	version        string
 	proxy          common.Proxy
 	spectatorCache map[GameId]Spectator
@@ -45,7 +43,6 @@ func NewRiotApi(dbFilename string, apiKey string, restrictions []common.Restrict
 	riotapi.database = CreatDatabaseRiotApi(dbFilename)
 	riotapi.champions = riotapi.database.GetChampions()
 	riotapi.riotIds = riotapi.database.GetRiotIds()
-	riotapi.summonerIds = riotapi.database.GetSummonerIds()
 	riotapi.version = riotapi.database.GetVersion()
 	riotapi.proxy = common.NewProxy(map[string]string{"X-Riot-Token": apiKey}, restrictions)
 	riotapi.spectatorCache = map[GameId]Spectator{}
@@ -146,14 +143,8 @@ func (riotapi *RiotApi) GetMastery(puuid Puuid, championId ChampionId) (Mastery,
 
 func (riotapi *RiotApi) GetLeagues(puuid Puuid) ([]League, error) {
 
-	// Summoner id
-	summonerId, err := riotapi.getSummonerId(puuid)
-	if err != nil {
-		return nil, fmt.Errorf("could not find summoner id for puuid %s", puuid)
-	}
-
 	// Request
-	url := fmt.Sprintf(RIOT_SCHEMA, "euw1") + fmt.Sprintf(ROUTE_LEAGUE, summonerId)
+	url := fmt.Sprintf(RIOT_SCHEMA, "euw1") + fmt.Sprintf(ROUTE_LEAGUE, puuid)
 	data := riotapi.request(url)
 	if data == nil {
 		return nil, fmt.Errorf("no leagues found for puuid %s", puuid)
@@ -205,33 +196,6 @@ func (riotapi *RiotApi) GetSpectator(puuid Puuid) (Spectator, error) {
 	riotapi.spectatorCache[gameId] = spectator
 
 	return spectator, nil
-}
-
-func (riotapi *RiotApi) getSummonerId(puuid Puuid) (SummonerId, error) {
-
-	// Check cache
-	summonerId, ok := riotapi.summonerIds[puuid]
-	if ok {
-		return summonerId, nil
-	}
-
-	// Request
-	url := fmt.Sprintf(RIOT_SCHEMA, "euw1") + fmt.Sprintf(ROUTE_SUMMONER, puuid)
-	data := riotapi.request(url)
-	if data == nil {
-		return "", fmt.Errorf("could not find summoner id for puuid %s", puuid)
-	}
-	var raw struct{ Id SummonerId }
-	if json.Unmarshal(data, &raw) != nil {
-		return "", fmt.Errorf("summoner id not found among received data")
-	}
-	summonerId = raw.Id
-	log.Debug().Msg(fmt.Sprintf("Found summoner id %s for puuid %s", summonerId, puuid))
-
-	// Update cache
-	riotapi.summonerIds[puuid] = summonerId
-	riotapi.database.SetSummonerId(puuid, summonerId)
-	return summonerId, nil
 }
 
 func (riotapi *RiotApi) getChampionData() error {
@@ -317,13 +281,11 @@ func (riotapi *RiotApi) Housekeeping(puuidsToKeep map[Puuid]struct{}) {
 	}
 
 	log.Info().Msg(fmt.Sprintf("Current number of riot ids: %d", len(riotapi.riotIds)))
-	log.Info().Msg(fmt.Sprintf("Current number of summoner ids: %d", len(riotapi.summonerIds)))
 	log.Info().Msg(fmt.Sprintf("Keeping %d puuids", len(puuidsToKeep)))
 
 	// Purge my memory first
 	// - remove all the riot ids
 	// - add the riot ids that we need to keep, with the latest values provided by riot
-	// - remove the summoner ids that are not needed
 	riotapi.riotIds = make(map[Puuid]RiotId, len(puuidsToKeep))
 	for puuid := range puuidsToKeep {
 
@@ -337,15 +299,8 @@ func (riotapi *RiotApi) Housekeeping(puuidsToKeep map[Puuid]struct{}) {
 		riotapi.riotIds[puuid] = riotid
 	}
 
-	for puuid := range riotapi.summonerIds {
-		if _, ok := puuidsToKeep[puuid]; !ok {
-			delete(riotapi.summonerIds, puuid)
-		}
-	}
-
 	// Send the final values to the database
 	riotapi.database.SetRiotIds(riotapi.riotIds)
-	riotapi.database.SetSummonerIds(riotapi.summonerIds)
 }
 
 // Fetches the latest version of the data dragon available, and checks the version

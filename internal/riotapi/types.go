@@ -6,7 +6,6 @@ import (
 )
 
 type Puuid string
-type SummonerId string
 type ChampionId int
 type GameId int64
 type Team []Participant

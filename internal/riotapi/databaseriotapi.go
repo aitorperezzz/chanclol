@@ -29,18 +29,6 @@ func (db *DatabaseRiotApi) SetRiotId(puuid Puuid, riotid RiotId) {
 
 }
 
-func (db *DatabaseRiotApi) GetSummonerIds() map[Puuid]SummonerId {
-	return map[Puuid]SummonerId{}
-}
-
-func (db *DatabaseRiotApi) SetSummonerIds(riotids map[Puuid]SummonerId) {
-
-}
-
-func (db *DatabaseRiotApi) SetSummonerId(puuid Puuid, summonerId SummonerId) {
-
-}
-
 func (db *DatabaseRiotApi) GetVersion() string {
 	return ""
 }

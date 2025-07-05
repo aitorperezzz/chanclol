@@ -22,7 +22,7 @@ var queueTypeNames map[string]string = map[string]string{
 
 func Welcome(channelName string) []Response {
 
-	content := fmt.Sprintf("Hi, I will be sending messages to channel %s\n", channelName)
+	content := fmt.Sprintf("Hi, I will be sending messages to channel `%s`\n", channelName)
 	content += "You can change this anytime by typing \n> `chanclol channel <channel_name>`"
 	return []Response{ResponseString{content}}
 }
@@ -214,13 +214,15 @@ func AddInGameMessage(team riotapi.Team, index int, embed *discordgo.MessageEmbe
 }
 
 func FormatLastPlayed(lastPlayed int64) string {
-	if lastPlayed == 0 {
+	switch lastPlayed {
+	case 0:
 		return "last played today"
-	} else if lastPlayed == 1 {
+	case 1:
 		return "last played yesterday"
-	} else {
+	default:
 		return fmt.Sprintf("last played %d days ago", lastPlayed)
 	}
+
 }
 
 func FormatQueueType(queueType string) string {
