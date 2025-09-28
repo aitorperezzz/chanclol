@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strconv"
 	"time"
 
@@ -33,6 +34,20 @@ type Config struct {
 
 func main() {
 
+	defer func() {
+		if r := recover(); r != nil {
+			log.Error().
+				Interface("panic", r).
+				Bytes("stack", debug.Stack()).
+				Msg("Unhandled panic in main")
+
+			// Flush by sleeping briefly to ensure logs are written
+			time.Sleep(100 * time.Millisecond)
+
+			os.Exit(1) // force non-zero exit
+		}
+	}()
+
 	// .env variables
 	err := godotenv.Load()
 	if err != nil {
@@ -48,7 +63,9 @@ func main() {
 		return filepath.Base(file) + ":" + strconv.Itoa(line)
 	}
 	zerolog.SetGlobalLevel(zerolog.DebugLevel)
-	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr}).With().Caller().Logger()
+	// Customize timestamp to include full day/date
+	zerolog.TimeFieldFormat = "2006-01-02 15:04:05"
+	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: "2006-01-02 15:04:05"}).With().Caller().Logger()
 
 	// Read configuration file
 	jsonFile, err := os.Open("config.json")
