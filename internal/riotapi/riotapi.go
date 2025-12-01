@@ -172,7 +172,7 @@ func (riotapi *RiotApi) GetSpectator(puuid Puuid) (Spectator, error) {
 	if err != nil {
 		return Spectator{}, err
 	}
-	log.Info().Msg(fmt.Sprintf("%s is playing", riotid))
+	log.Debug().Msg(fmt.Sprintf("%s is playing", riotid))
 
 	// Decode game id and check if in cache
 	gameId, err := UnmarshalGameId(data)

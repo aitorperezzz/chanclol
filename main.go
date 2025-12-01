@@ -5,6 +5,7 @@ import (
 	"chanclol/internal/common"
 	"chanclol/internal/riotapi"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -12,13 +13,13 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/joho/godotenv"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
 
 type Config struct {
 	LogFilename                 string `json:"log_filename"`
+	LogLevel                    string `json:"log_level"`
 	BotDbFilename               string `json:"database_filename_bot"`
 	RiotapiDbFilename           string `json:"database_filename_riotapi"`
 	OfflineThresholdMins        int    `json:"offline_threshold_mins"`
@@ -49,23 +50,16 @@ func main() {
 	}()
 
 	// .env variables
-	err := godotenv.Load()
-	if err != nil {
-		log.Fatal().Msg("Error loading .env file")
+	riotapiKey := os.Getenv("RIOT_API_KEY")
+	if riotapiKey == "" {
+		log.Error().Msg("Env variable RIOT_API_KEY not provided. Cannot continue")
 		return
 	}
-	riotapiKey := os.Getenv("RIOT_API_KEY")
 	discordToken := os.Getenv("DISCORD_TOKEN")
-
-	// Configure logger
-	// TODO: read log level from config file
-	zerolog.CallerMarshalFunc = func(pc uintptr, file string, line int) string {
-		return filepath.Base(file) + ":" + strconv.Itoa(line)
+	if discordToken == "" {
+		log.Error().Msg("Env variable DISCORD_TOKEN not provided. Cannot continue")
+		return
 	}
-	zerolog.SetGlobalLevel(zerolog.DebugLevel)
-	// Customize timestamp to include full day/date
-	zerolog.TimeFieldFormat = "2006-01-02 15:04:05"
-	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: "2006-01-02 15:04:05"}).With().Caller().Logger()
 
 	// Read configuration file
 	jsonFile, err := os.Open("config.json")
@@ -85,6 +79,21 @@ func main() {
 		log.Error().Err(err)
 		return
 	}
+
+	// Configure logger
+	logLevel, err := zerolog.ParseLevel(config.LogLevel)
+	if err != nil {
+		log.Error().Err(err)
+		log.Error().Msg(fmt.Sprintf("Could not understand log level %s", config.LogLevel))
+		return
+	}
+	zerolog.CallerMarshalFunc = func(pc uintptr, file string, line int) string {
+		return filepath.Base(file) + ":" + strconv.Itoa(line)
+	}
+	zerolog.SetGlobalLevel(logLevel)
+	// Customize timestamp to include full day/date
+	zerolog.TimeFieldFormat = "2006-01-02 15:04:05"
+	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: "2006-01-02 15:04:05"}).With().Caller().Logger()
 
 	// Create riot API
 	log.Info().Msg("Creating riot API")
