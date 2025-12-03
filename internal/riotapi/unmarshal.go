@@ -3,6 +3,7 @@ package riotapi
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -75,6 +76,7 @@ func UnmarshalSpectator(data []byte, riotapi *RiotApi) (Spectator, error) {
 		GameLength   int64
 		Participants []struct {
 			Puuid      Puuid
+			RiotId     string
 			ChampionId ChampionId
 			TeamId     int
 		}
@@ -85,22 +87,30 @@ func UnmarshalSpectator(data []byte, riotapi *RiotApi) (Spectator, error) {
 
 	// teams
 	teams := Teams{}
-	for _, part := range raw.Participants {
+	for _, rawParticipant := range raw.Participants {
 
 		var err error
 
 		// Request all the necessary data for this participant
 
 		// riotid
-		// TODO: the riot id is already present in the participant data
 		var riotid RiotId
-		if riotid, err = riotapi.GetRiotId(part.Puuid); err != nil {
-			return Spectator{}, err
+		// Extract the riot id from participant data if correctly formatted
+		// (this is not documented in the official API)
+		index := strings.Index(rawParticipant.RiotId, "#")
+		if index == -1 {
+			log.Error().Msg(fmt.Sprintf("Riot id '%s' is not correctly formatted inside participant data", rawParticipant.RiotId))
+			// Try retrieving it through a normal API call
+			if riotid, err = riotapi.GetRiotId(rawParticipant.Puuid); err != nil {
+				return Spectator{}, err
+			}
+		} else {
+			riotid = RiotId{GameName: rawParticipant.RiotId[:index], TagLine: rawParticipant.RiotId[index+1:]}
 		}
 
 		// champion name
 		var championName string
-		if championName, err = riotapi.GetChampionName(part.ChampionId); err != nil {
+		if championName, err = riotapi.GetChampionName(rawParticipant.ChampionId); err != nil {
 			return Spectator{}, err
 		}
 
@@ -108,20 +118,20 @@ func UnmarshalSpectator(data []byte, riotapi *RiotApi) (Spectator, error) {
 		// TODO: I cannot distinguish if mastery is not available or
 		// I have a problem connecting to riot API
 		var mastery Mastery
-		if mastery, err = riotapi.GetMastery(part.Puuid, part.ChampionId); err != nil {
-			log.Debug().Msg(fmt.Sprintf("Mastery not available for puuid %s", string(part.Puuid)))
+		if mastery, err = riotapi.GetMastery(rawParticipant.Puuid, rawParticipant.ChampionId); err != nil {
+			log.Debug().Msg(fmt.Sprintf("Mastery not available for puuid %s", string(rawParticipant.Puuid)))
 		}
 
 		// league
 		var leagues []League
-		if leagues, err = riotapi.GetLeagues(part.Puuid); err != nil {
+		if leagues, err = riotapi.GetLeagues(rawParticipant.Puuid); err != nil {
 			return Spectator{}, err
 		}
 
-		participant := Participant{Puuid: part.Puuid, Riotid: riotid, ChampionName: championName, Mastery: mastery, Leagues: leagues}
+		participant := Participant{Puuid: rawParticipant.Puuid, Riotid: riotid, ChampionName: championName, Mastery: mastery, Leagues: leagues}
 
 		// Add participant to the team
-		teams[part.TeamId] = append(teams[part.TeamId], participant)
+		teams[rawParticipant.TeamId] = append(teams[rawParticipant.TeamId], participant)
 	}
 
 	return Spectator{GameId: raw.GameId, GameMode: raw.GameMode, GameLength: time.Duration(raw.GameLength * int64(time.Second)), Teams: teams}, nil
