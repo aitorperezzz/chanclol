@@ -433,10 +433,10 @@ func (bot *Bot) loop() {
 		for _, guildid := range bot.getGuildIds(puuid) {
 			guild := bot.guilds[guildid]
 			if guild.lastInformedGameIds[puuid] == spectator.GameId {
-				log.Debug().Msg(fmt.Sprintf("Spectator message for player %s in guild %s for this game (%d) was already sent", &riotid, guildid, spectator.GameId))
+				log.Debug().Msg(fmt.Sprintf("Spectator message for player %s and game %d in guild %s was already sent", &riotid, spectator.GameId, guildid))
 				continue
 			}
-			log.Info().Msg(fmt.Sprintf("Spectator message for player %s in guild %s for this game (%d) has to be sent", &riotid, guildid, spectator.GameId))
+			log.Info().Msg(fmt.Sprintf("Sending spectator message for player %s and game %d in guild %s", &riotid, spectator.GameId, guildid))
 			// Build the complete response
 			responses := InGameMessage(puuid, riotid, spectator)
 			bot.sendResponsesToGuild(responses, guildid)

@@ -106,6 +106,19 @@ func (proxy *Proxy) Request(url string, vital bool) []byte {
 		return nil
 	default:
 		log.Error().Msg(logMessage)
+		// Read body for more info
+		defer res.Body.Close()
+		bodyBytes, err := io.ReadAll(res.Body)
+		if err != nil {
+			log.Error().Err(err).Msg("Could not read response body")
+			return nil
+		}
+		// Print the raw body
+		log.Error().Msgf("Body: %s", string(bodyBytes))
+		// Print headers (useful for rate limits!)
+		for key, val := range res.Header {
+			log.Debug().Msgf("Header %s: %v", key, val)
+		}
 		return nil
 	}
 }
