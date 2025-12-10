@@ -1,6 +1,6 @@
 services:
   bot:
-    container_name: discord-bot
+    container_name: chanclol
     build: .
     restart: unless-stopped
     env_file:
