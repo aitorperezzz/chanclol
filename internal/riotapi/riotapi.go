@@ -186,8 +186,7 @@ func (riotapi *RiotApi) GetSpectator(puuid Puuid) (Spectator, error) {
 
 	// Not cached, so we need to decode the complete data
 	// and make all the other requests
-	// TODO: this function name makes me think I'm only decoding
-	spectator, err := UnmarshalSpectator(data, riotapi)
+	spectator, err := BuildSpectator(data, riotapi)
 	if err != nil {
 		return Spectator{}, err
 	}

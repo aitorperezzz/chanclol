@@ -199,13 +199,32 @@ func AddInGameMessage(team riotapi.Team, index int, embed *discordgo.MessageEmbe
 	name := fmt.Sprintf("**Team %d**", index+1)
 	value := ""
 	for _, participant := range team {
-		value += fmt.Sprintf("**%s** (%s)\n", participant.ChampionName, participant.Riotid)
+
+		// Maybe the champion name or riot id could not be found because of an error in the API,
+		// so make sure we print it correctly
+		var championNameToPrint string
+		if participant.ChampionName == "" {
+			championNameToPrint = "Unknown"
+		} else {
+			championNameToPrint = participant.ChampionName
+		}
+		var riotIdToPrint string
+		if participant.Riotid.GameName == "" && participant.Riotid.TagLine == "" {
+			riotIdToPrint = "Unknown"
+		} else {
+			riotIdToPrint = participant.Riotid.String()
+		}
+		value += fmt.Sprintf("**%s** (%s)\n", championNameToPrint, riotIdToPrint)
+
+		// Handle the mastery received
 		if participant.Mastery.Available {
 			lastPlayed := int64(time.Since(participant.Mastery.LastPlayed).Hours()) / 24
 			value += fmt.Sprintf("- Mastery %d, %s\n", participant.Mastery.Level, FormatLastPlayed(lastPlayed))
 		} else {
 			value += "- Mastery not available\n"
 		}
+
+		// Handle the leagues received
 		for _, league := range participant.Leagues {
 			value += fmt.Sprintf("- %s: %s\n", FormatQueueType(league.QueueType), LeagueMessageValue(league))
 		}
