@@ -1,8 +1,9 @@
 services:
-  bot:
-    container_name: chanclol
+  chanclol:
     build: .
+    image: chanclol:latest
     restart: unless-stopped
+    container_name: chanclol
     env_file:
       - .env
     environment:
