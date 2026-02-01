@@ -1,8 +1,0 @@
-services:
-  bot:
-    restart: unless-stopped
-    build: .
-    volumes:
-      - type: bind
-        source: ./.env
-        target: /app/.env

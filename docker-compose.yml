@@ -1,0 +1,10 @@
+services:
+  chanclol:
+    build: .
+    image: registry.home:5000/chanclol:latest
+    restart: unless-stopped
+    container_name: chanclol
+    env_file:
+      - .env
+    environment:
+      - TZ=Europe/Berlin

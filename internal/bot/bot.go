@@ -103,6 +103,24 @@ func NewBot(
 
 }
 
+func connectWithRetry(dg *discordgo.Session) {
+
+	// This is executed only when the application first starts, and attempts connection
+	// to the discord gateway repeatedly until the connection is first established. After that,
+	// supposedly the discordgo package will keep the connection alive and retry connections
+	log.Info().Msg("Attempting connection to the Discord gateway")
+	for {
+		err := dg.Open()
+		if err == nil {
+			log.Info().Msg("Connected to Discord gateway successfully")
+			return
+		}
+
+		log.Warn().Msg(fmt.Sprintf("Discord connection failed: %v. Retrying in 10s...", err))
+		time.Sleep(10 * time.Second)
+	}
+}
+
 func (bot *Bot) Run() error {
 	// Create session
 	var err error
@@ -115,8 +133,7 @@ func (bot *Bot) Run() error {
 	bot.discordgo.AddHandler(bot.Receive)
 
 	// Open session
-	log.Info().Msg("Opening discord session...")
-	bot.discordgo.Open()
+	connectWithRetry(bot.discordgo)
 	defer bot.discordgo.Close()
 
 	// keep bot running untill there is NO os interruption (ctrl + C)
@@ -393,14 +410,14 @@ func (bot *Bot) loop() {
 			continue
 		}
 		// We have a player to check
-		log.Info().Msg(fmt.Sprintf("Checking in game status of player %s", riotid))
+		log.Debug().Msg(fmt.Sprintf("Checking in game status of player %s", riotid))
 		spectator, err := bot.riotapi.GetSpectator(puuid)
 		// At this point, a request has been performed in some form,
 		// so the stopwatch needs to be reset
 		player := bot.players[puuid]
 		player.StopWatch.Start()
 		if err != nil {
-			log.Info().Msg(fmt.Sprintf("Spectator data for player %s is not available", riotid))
+			log.Debug().Msg(fmt.Sprintf("Spectator data for player %s is not available", riotid))
 			// Player is offline, update timeout if needed
 			// TODO: could be an error of the riot api, and the player could be online
 			if player.UpdateCheckTimeout(false, bot.offlineThreshold, bot.onlineTimeout, bot.offlineTimeout) {
@@ -416,10 +433,10 @@ func (bot *Bot) loop() {
 		for _, guildid := range bot.getGuildIds(puuid) {
 			guild := bot.guilds[guildid]
 			if guild.lastInformedGameIds[puuid] == spectator.GameId {
-				log.Info().Msg(fmt.Sprintf("Spectator message for player %s in guild %s for this game (%d) was already sent", &riotid, guildid, spectator.GameId))
+				log.Debug().Msg(fmt.Sprintf("Spectator message for player %s and game %d in guild %s was already sent", &riotid, spectator.GameId, guildid))
 				continue
 			}
-			log.Info().Msg(fmt.Sprintf("Spectator message for player %s in guild %s for this game (%d) has to be sent", &riotid, guildid, spectator.GameId))
+			log.Info().Msg(fmt.Sprintf("Sending spectator message for player %s and game %d in guild %s", &riotid, spectator.GameId, guildid))
 			// Build the complete response
 			responses := InGameMessage(puuid, riotid, spectator)
 			bot.sendResponsesToGuild(responses, guildid)
@@ -432,7 +449,7 @@ func (bot *Bot) loop() {
 
 func (bot *Bot) selectPlayerToCheck() (riotapi.Puuid, bool) {
 
-	log.Info().Msg("Selecting player to check in this iteration")
+	log.Debug().Msg("Selecting player to check in this iteration")
 	var longestTimeStopped time.Duration
 	var puuid riotapi.Puuid
 	for _, player := range bot.players {
@@ -461,10 +478,10 @@ func (bot *Bot) selectPlayerToCheck() (riotapi.Puuid, bool) {
 	}
 	// We have selected the best option to check
 	if puuid == "" {
-		log.Info().Msg("Not checking any player during this iteration")
+		log.Debug().Msg("Not checking any player during this iteration")
 		return puuid, false
 	} else {
-		log.Info().Msg(fmt.Sprintf("Checking player with puuid %s in this iteration", puuid))
+		log.Debug().Msg(fmt.Sprintf("Checking player with puuid %s in this iteration", puuid))
 		return puuid, true
 	}
 }
