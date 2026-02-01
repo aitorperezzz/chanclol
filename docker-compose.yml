@@ -1,7 +1,7 @@
 services:
   chanclol:
     build: .
-    image: chanclol:latest
+    image: registry.home:5000/chanclol:latest
     restart: unless-stopped
     container_name: chanclol
     env_file:
