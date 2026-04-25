@@ -1,0 +1,22 @@
+stages:
+  - build
+
+variables:
+  STORAGE_DRIVER: vfs
+  BUILDAH_FORMAT: docker
+  BUILDAH_ISOLATION: chroot
+  REGISTRY_TLS_VERIFY: "false"
+  IMAGE_TAG: "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA"
+  IMAGE_LATEST: "$CI_REGISTRY_IMAGE:latest"
+
+build-image:
+  stage: build
+  image: quay.io/buildah/stable:latest
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+  before_script:
+    - buildah --storage-driver "$STORAGE_DRIVER" login --tls-verify="$REGISTRY_TLS_VERIFY" --username "$CI_REGISTRY_USER" --password "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+  script:
+    - buildah --storage-driver "$STORAGE_DRIVER" build --isolation "$BUILDAH_ISOLATION" --tag "$IMAGE_TAG" --tag "$IMAGE_LATEST" .
+    - buildah --storage-driver "$STORAGE_DRIVER" push --tls-verify="$REGISTRY_TLS_VERIFY" "$IMAGE_TAG"
+    - buildah --storage-driver "$STORAGE_DRIVER" push --tls-verify="$REGISTRY_TLS_VERIFY" "$IMAGE_LATEST"

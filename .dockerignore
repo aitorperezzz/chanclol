@@ -1,5 +1,28 @@
-.vscode/
+# Build outputs
+chanclol
+bin/
+dist/
+
+# Runtime state and secrets
 .env
 *.db
 *.log
-.git/
+
+# Docker and CI metadata
+Dockerfile
+docker-compose.yml
+.gitlab-ci.yml
+
+# Git
+.git
+.gitignore
+
+# Go cache and coverage
+.cache/
+coverage.out
+
+# System and editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

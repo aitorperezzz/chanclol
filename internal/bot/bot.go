@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
@@ -136,11 +137,12 @@ func (bot *Bot) Run() error {
 	connectWithRetry(bot.discordgo)
 	defer bot.discordgo.Close()
 
-	// keep bot running untill there is NO os interruption (ctrl + C)
+	// keep bot running until there is an OS interruption
 	log.Info().Msg("Running")
-	bot.loop()
+	go bot.loop()
+
 	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	<-c
 
 	return nil

@@ -3,3 +3,5 @@ chanclol
 .env
 *.db
 *.log
+.cache/
+coverage.out
