@@ -57,6 +57,7 @@ type Players map[riotapi.Puuid]*Player
 type Bot struct {
 	token                       string
 	database                    DatabaseBot
+	mu                          *sync.RWMutex
 	riotapi                     *riotapi.RiotApi
 	guilds                      Guilds
 	players                     Players
@@ -83,6 +84,7 @@ func NewBot(
 	bot.token = token
 	// Database
 	bot.database = NewDatabaseBot(dbFilename)
+	bot.mu = &sync.RWMutex{}
 	// Initialise values from the database if present
 	bot.guilds = bot.database.GetGuilds()
 	bot.players = bot.database.GetPlayers()
@@ -185,25 +187,24 @@ func (bot *Bot) Receive(discord *discordgo.Session, message *discordgo.MessageCr
 		}
 
 		// Register the guild if it's the first time I see it
-		if _, ok := bot.guilds[message.GuildID]; !ok {
+		if bot.addGuildIfMissing(message.GuildID, message.ChannelID) {
 			log.Info().Msg(fmt.Sprintf("Initialising guild %s", message.GuildID))
-			guild := Guild{id: message.GuildID, channelId: message.ChannelID}
-			guild.lastInformedGameIds = make(map[riotapi.Puuid]riotapi.GameId)
-			bot.guilds[message.GuildID] = &guild
-			bot.database.AddGuild(message.GuildID, message.ChannelID)
 			// Send welcome message
 			log.Info().Msg("Sending welcome message")
 			responses = append(responses, Welcome(channelName)...)
 		}
-		guild := bot.guilds[message.GuildID]
 
 		// If this is an old guild, take the opportunity to check if the
 		// configured channel still exists. If it does not, update the channel
 		// and notify
-		configuredChannelName, err := bot.getChannelName(discord, message.GuildID, guild.channelId)
+		configuredChannelId, ok := bot.guildChannelId(message.GuildID)
+		if !ok {
+			log.Error().Msg(fmt.Sprintf("Could not find guild %s after initialisation", message.GuildID))
+			return
+		}
+		configuredChannelName, err := bot.getChannelName(discord, message.GuildID, configuredChannelId)
 		if err != nil {
-			guild.channelId = message.ChannelID
-			bot.database.SetChannel(guild.id, message.ChannelID)
+			bot.setGuildChannel(message.GuildID, message.ChannelID)
 			configuredChannelName = channelName
 			log.Info().Msg(fmt.Sprintf("Updated the channel for in-game messages to %s", channelName))
 			responses = append(responses, ChannelDisappeared(channelName)...)
@@ -216,14 +217,14 @@ func (bot *Bot) Receive(discord *discordgo.Session, message *discordgo.MessageCr
 			default:
 				panic(fmt.Sprintf("unexpected type of riot id %T", riotid))
 			case riotapi.RiotId:
-				responses = append(responses, bot.register(riotid, guild)...)
+				responses = append(responses, bot.register(riotid, message.GuildID)...)
 			}
 		case COMMAND_UNREGISTER:
 			switch riotid := parseResult.arguments.(type) {
 			default:
 				panic(fmt.Sprintf("unexpected type of riot id %T", riotid))
 			case riotapi.RiotId:
-				responses = append(responses, bot.unregister(riotid, guild)...)
+				responses = append(responses, bot.unregister(riotid, message.GuildID)...)
 			}
 		case COMMAND_RANK:
 			switch riotid := parseResult.arguments.(type) {
@@ -237,10 +238,10 @@ func (bot *Bot) Receive(discord *discordgo.Session, message *discordgo.MessageCr
 			default:
 				panic(fmt.Sprintf("unexpected type of channel name %T", channelName))
 			case string:
-				responses = append(responses, bot.channel(discord, channelName, guild)...)
+				responses = append(responses, bot.channel(discord, channelName, message.GuildID)...)
 			}
 		case COMMAND_STATUS:
-			responses = append(responses, bot.status(discord, guild, configuredChannelName)...)
+			responses = append(responses, bot.status(discord, message.GuildID, configuredChannelName)...)
 		case COMMAND_HELP:
 			responses = append(responses, HelpMessage()...)
 		default:
@@ -267,10 +268,15 @@ func (bot *Bot) sendResponsesToChannel(responses []Response, channelId string) {
 func (bot *Bot) sendResponsesToGuild(responses []Response, guildid string) {
 
 	// Get the channel id for this guild
-	bot.sendResponsesToChannel(responses, bot.guilds[guildid].channelId)
+	channelid, ok := bot.guildChannelId(guildid)
+	if !ok {
+		log.Warn().Msg(fmt.Sprintf("Could not send response because guild %s is not registered", guildid))
+		return
+	}
+	bot.sendResponsesToChannel(responses, channelid)
 }
 
-func (bot *Bot) register(riotid riotapi.RiotId, guild *Guild) []Response {
+func (bot *Bot) register(riotid riotapi.RiotId, guildid string) []Response {
 
 	// Get the puuid
 	puuid, err := bot.riotapi.GetPuuid(riotid)
@@ -280,8 +286,8 @@ func (bot *Bot) register(riotid riotapi.RiotId, guild *Guild) []Response {
 	}
 
 	// Check if player already belongs to the guild
-	if _, ok := guild.lastInformedGameIds[puuid]; ok {
-		log.Info().Msg(fmt.Sprintf("Player %s is already registered in guild %s", riotid, guild.id))
+	if bot.isPlayerRegisteredInGuild(puuid, guildid) {
+		log.Info().Msg(fmt.Sprintf("Player %s is already registered in guild %s", riotid, guildid))
 		return PlayerAlreadyRegistered(riotid)
 	}
 
@@ -293,27 +299,21 @@ func (bot *Bot) register(riotid riotapi.RiotId, guild *Guild) []Response {
 	}
 
 	// Now it's safe to register the player
-	log.Info().Msg(fmt.Sprintf("Registering player %s in guild %s", &riotid, guild.id))
-	// Add it to my complete list of players if necessary
-	if _, ok := bot.players[puuid]; !ok {
-		player := Player{id: puuid}
-		player.StopWatch.Timeout = bot.offlineTimeout
-		bot.players[puuid] = &player
+	log.Info().Msg(fmt.Sprintf("Registering player %s in guild %s", &riotid, guildid))
+	if !bot.addPlayerToGuild(puuid, guildid) {
+		log.Info().Msg(fmt.Sprintf("Player %s is already registered in guild %s", riotid, guildid))
+		return PlayerAlreadyRegistered(riotid)
 	}
-	// Add to the guild
-	guild.lastInformedGameIds[puuid] = 0
-	// Add to the database
-	bot.database.AddPlayerToGuild(puuid, guild.id)
 
 	// Send the final message
-	log.Info().Msg(fmt.Sprintf("Player %s has been registered in guild %s", &riotid, guild.id))
+	log.Info().Msg(fmt.Sprintf("Player %s has been registered in guild %s", &riotid, guildid))
 	return []Response{
 		PlayerRegistered(riotid),
 		PlayerRank(riotid, leagues),
 	}
 }
 
-func (bot *Bot) unregister(riotid riotapi.RiotId, guild *Guild) []Response {
+func (bot *Bot) unregister(riotid riotapi.RiotId, guildid string) []Response {
 
 	// Get the puuid
 	puuid, err := bot.riotapi.GetPuuid(riotid)
@@ -323,20 +323,21 @@ func (bot *Bot) unregister(riotid riotapi.RiotId, guild *Guild) []Response {
 	}
 
 	// Check if the player was registered in the guild
-	if _, ok := guild.lastInformedGameIds[puuid]; !ok {
-		log.Info().Msg(fmt.Sprintf("Player %s was not previously registered in guild %s", riotid, guild.id))
+	if !bot.isPlayerRegisteredInGuild(puuid, guildid) {
+		log.Info().Msg(fmt.Sprintf("Player %s was not previously registered in guild %s", riotid, guildid))
 		return PlayerNotPreviouslyRegistered(riotid)
 	}
 
 	// Check if the player was registered in the guild
-	log.Info().Msg(fmt.Sprintf("Unregistering player %s from guild id %s", riotid, guild.id))
-	delete(guild.lastInformedGameIds, puuid)
-	// Remove from the database
-	bot.database.RemovePlayerFromGuild(puuid, guild.id)
-	log.Info().Msg(fmt.Sprintf("Player %s has been unregistered from guild %s", riotid, guild.id))
+	log.Info().Msg(fmt.Sprintf("Unregistering player %s from guild id %s", riotid, guildid))
+	removedFromGuild, removedCompletely := bot.removePlayerFromGuild(puuid, guildid)
+	if !removedFromGuild {
+		log.Info().Msg(fmt.Sprintf("Player %s was not previously registered in guild %s", riotid, guildid))
+		return PlayerNotPreviouslyRegistered(riotid)
+	}
+	log.Info().Msg(fmt.Sprintf("Player %s has been unregistered from guild %s", riotid, guildid))
 	// If the player does not belong to ANY guild, remove it completely
-	if len(bot.getGuildIds(puuid)) == 0 {
-		delete(bot.players, puuid)
+	if removedCompletely {
 		log.Info().Msg(fmt.Sprintf("Player %s removed completely", riotid))
 	}
 	return PlayerUnregistered(riotid)
@@ -363,27 +364,26 @@ func (bot *Bot) rank(riotid riotapi.RiotId) []Response {
 	return []Response{PlayerRank(riotid, leagues)}
 }
 
-func (bot *Bot) channel(discord *discordgo.Session, channelName string, guild *Guild) []Response {
+func (bot *Bot) channel(discord *discordgo.Session, channelName string, guildid string) []Response {
 
 	// Try to find the id from the channel name
-	channelId, err := bot.getChannelId(discord, guild.id, channelName)
+	channelId, err := bot.getChannelId(discord, guildid, channelName)
 	if err != nil {
 		log.Info().Msg(fmt.Sprintf("Could not extract channel id from channel name %s", channelName))
 		return ChannelDoesNotExist(channelName)
 	}
 
 	// We have a new channel to send messages to
-	log.Info().Msg(fmt.Sprintf("Changing channel used by guild %s to %s", guild.id, channelName))
-	guild.channelId = channelId
-	bot.database.SetChannel(guild.id, channelId)
+	log.Info().Msg(fmt.Sprintf("Changing channel used by guild %s to %s", guildid, channelName))
+	bot.setGuildChannel(guildid, channelId)
 	return ChannelChanged(channelName)
 }
 
-func (bot *Bot) status(discord *discordgo.Session, guild *Guild, configuredChannelName string) []Response {
+func (bot *Bot) status(discord *discordgo.Session, guildid string, configuredChannelName string) []Response {
 
 	// Create list of player names in this guild
 	riotIds := []riotapi.RiotId{}
-	for puuid := range guild.lastInformedGameIds {
+	for _, puuid := range bot.guildPuuids(guildid) {
 		riotid, err := bot.riotapi.GetRiotId(puuid)
 		if err != nil {
 			panic(err)
@@ -422,12 +422,13 @@ func (bot *Bot) loop() {
 		spectator, err := bot.riotapi.GetSpectator(puuid)
 		// At this point, a request has been performed in some form,
 		// so the stopwatch needs to be reset
-		player := bot.players[puuid]
-		player.StopWatch.Start()
+		if !bot.startPlayerStopwatch(puuid) {
+			continue
+		}
 		if err != nil {
 			if errors.Is(err, common.ErrNotFound) {
 				log.Debug().Msg(fmt.Sprintf("Spectator data for player %s is not available", riotid))
-				if player.UpdateCheckTimeout(false, bot.offlineThreshold, bot.onlineTimeout, bot.offlineTimeout) {
+				if bot.updatePlayerCheckTimeout(puuid, false) {
 					log.Info().Msg(fmt.Sprintf("Player %s is now offline", riotid))
 				}
 			} else {
@@ -436,23 +437,17 @@ func (bot *Bot) loop() {
 			continue
 		}
 		// Player is online, update timeout if needed
-		if player.UpdateCheckTimeout(true, bot.offlineThreshold, bot.onlineTimeout, bot.offlineTimeout) {
+		if bot.updatePlayerCheckTimeout(puuid, true) {
 			log.Info().Msg(fmt.Sprintf("Player %s is now online", &riotid))
 		}
 		// Get the guilds where this player is registered
-		for _, guildid := range bot.getGuildIds(puuid) {
-			guild := bot.guilds[guildid]
-			if guild.lastInformedGameIds[puuid] == spectator.GameId {
-				log.Debug().Msg(fmt.Sprintf("Spectator message for player %s and game %d in guild %s was already sent", &riotid, spectator.GameId, guildid))
-				continue
-			}
-			log.Info().Msg(fmt.Sprintf("Sending spectator message for player %s and game %d in guild %s", &riotid, spectator.GameId, guildid))
+		for _, target := range bot.guildNotificationTargets(puuid, spectator.GameId) {
+			log.Info().Msg(fmt.Sprintf("Sending spectator message for player %s and game %d in guild %s", &riotid, spectator.GameId, target.guildid))
 			// Build the complete response
 			responses := InGameMessage(puuid, riotid, spectator)
-			bot.sendResponsesToGuild(responses, guildid)
+			bot.sendResponsesToChannel(responses, target.channelid)
 			// Update last informed game id
-			guild.lastInformedGameIds[puuid] = spectator.GameId
-			bot.database.SetLastInformedGameId(puuid, guildid, spectator.GameId)
+			bot.setLastInformedGameId(puuid, target.guildid, spectator.GameId)
 		}
 	}
 }
@@ -462,21 +457,20 @@ func (bot *Bot) selectPlayerToCheck() (riotapi.Puuid, bool) {
 	log.Debug().Msg("Selecting player to check in this iteration")
 	var longestTimeStopped time.Duration
 	var puuid riotapi.Puuid
-	for _, player := range bot.players {
-		riotid, err := bot.riotapi.GetRiotId(player.id)
+	for _, player := range bot.playerCheckStates() {
+		riotid, err := bot.riotapi.GetRiotId(player.puuid)
 		if err != nil {
 			panic(err)
 		}
 		// Time the stopwatch has been stopped for this player
-		stopped, elapsed := player.StopWatch.Stopped()
-		if stopped {
-			if elapsed > longestTimeStopped {
+		if player.stopped {
+			if player.elapsed > longestTimeStopped {
 				// This player is available to be checked,
 				// and has been stopped more than the others,
 				// so it's our best candidate
 				log.Debug().Msg(fmt.Sprintf("- %s: player has been stopped for longer", &riotid))
-				longestTimeStopped = elapsed
-				puuid = player.id
+				longestTimeStopped = player.elapsed
+				puuid = player.puuid
 			} else {
 				// This player is available to check, but has been checked
 				// more recently than others
@@ -494,18 +488,6 @@ func (bot *Bot) selectPlayerToCheck() (riotapi.Puuid, bool) {
 		log.Debug().Msg(fmt.Sprintf("Checking player with puuid %s in this iteration", puuid))
 		return puuid, true
 	}
-}
-
-// Get all the guild ids where the provided player is registered
-func (bot *Bot) getGuildIds(puuid riotapi.Puuid) []string {
-	guildids := []string{}
-	for _, guild := range bot.guilds {
-		if _, ok := guild.lastInformedGameIds[puuid]; ok {
-			guildids = append(guildids, guild.id)
-			continue
-		}
-	}
-	return guildids
 }
 
 // Get channel name, provided a channel id, from the discord api
@@ -539,9 +521,5 @@ func (bot *Bot) getChannelId(discord *discordgo.Session, guildid string, channel
 
 func (bot *Bot) riotapiHousekeeping() {
 	log.Info().Msg("Performing Riot API housekeeping")
-	puuidsToKeep := make(map[riotapi.Puuid]struct{}, len(bot.players))
-	for puuid := range bot.players {
-		puuidsToKeep[puuid] = struct{}{}
-	}
-	bot.riotapi.Housekeeping(puuidsToKeep)
+	bot.riotapi.Housekeeping(bot.registeredPuuids())
 }
