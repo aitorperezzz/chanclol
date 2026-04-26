@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/joho/godotenv"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
@@ -49,43 +50,48 @@ func main() {
 		}
 	}()
 
+	if err := run(); err != nil {
+		log.Error().Err(err).Msg("chanclol stopped")
+		os.Exit(1)
+	}
+}
+
+func run() error {
+	// Loading .env is optional; fail only when the file exists but cannot be read or parsed.
+	if err := godotenv.Load(); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("could not load .env file: %w", err)
+	}
+
 	// .env variables
 	riotapiKey := os.Getenv("RIOT_API_KEY")
 	if riotapiKey == "" {
-		log.Error().Msg("Env variable RIOT_API_KEY not provided. Cannot continue")
-		return
+		return fmt.Errorf("env variable RIOT_API_KEY not provided")
 	}
 	discordToken := os.Getenv("DISCORD_TOKEN")
 	if discordToken == "" {
-		log.Error().Msg("Env variable DISCORD_TOKEN not provided. Cannot continue")
-		return
+		return fmt.Errorf("env variable DISCORD_TOKEN not provided")
 	}
 
 	// Read configuration file
 	jsonFile, err := os.Open("config.json")
 	if err != nil {
-		log.Error().Err(err)
-		return
+		return err
 	}
 	defer jsonFile.Close()
 	// unmarshal
 	byteValue, err := io.ReadAll(jsonFile)
 	if err != nil {
-		log.Error().Err(err)
-		return
+		return err
 	}
 	var config Config
 	if err := json.Unmarshal(byteValue, &config); err != nil {
-		log.Error().Err(err)
-		return
+		return err
 	}
 
 	// Configure logger
 	logLevel, err := zerolog.ParseLevel(config.LogLevel)
 	if err != nil {
-		log.Error().Err(err)
-		log.Error().Msg(fmt.Sprintf("Could not understand log level %s", config.LogLevel))
-		return
+		return fmt.Errorf("could not understand log level %s: %w", config.LogLevel, err)
 	}
 	zerolog.CallerMarshalFunc = func(pc uintptr, file string, line int) string {
 		return filepath.Base(file) + ":" + strconv.Itoa(line)
@@ -113,10 +119,9 @@ func main() {
 	mainCycle := time.Duration(int64(config.MainLoopCycleSecs) * int64(time.Second))
 	bot, err := bot.NewBot(discordToken, config.BotDbFilename, riotapiHousekeeping, offlineThreshold, offlineTimeout, onlineTimeout, mainCycle, &riotapi)
 	if err != nil {
-		log.Error().Msg("Could not create discord bot")
-		return
+		return fmt.Errorf("could not create discord bot: %w", err)
 	}
 
 	// Run bot
-	bot.Run()
+	return bot.Run()
 }

@@ -19,6 +19,8 @@ First prepare a `.env` file defining the following environment variables:
 - `RIOT_API_KEY`: valid API key as provided by Riot
 - `DISCORD_TOKEN`: the token necessary to connect to Discord
 
+The same `.env` file is used by Docker Compose and by local Go runs. The application loads `.env` automatically when the file exists, while still accepting normal environment variables when running in another environment.
+
 It is recommended to run the application in a container:
 
 ```sh
