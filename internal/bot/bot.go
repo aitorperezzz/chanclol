@@ -282,7 +282,7 @@ func (bot *Bot) register(riotid riotapi.RiotId, guildid string) []Response {
 	puuid, err := bot.riotapi.GetPuuid(riotid)
 	if err != nil {
 		log.Info().Err(err)
-		return NoResponseRiotApi(riotid)
+		return RiotAccountError(riotid, err)
 	}
 
 	// Check if player already belongs to the guild
@@ -293,9 +293,11 @@ func (bot *Bot) register(riotid riotapi.RiotId, guildid string) []Response {
 
 	// Get rank of this player
 	leagues, err := bot.riotapi.GetLeagues(puuid)
-	if err != nil {
+	if errors.Is(err, common.ErrNotFound) {
+		leagues = []riotapi.League{}
+	} else if err != nil {
 		log.Info().Err(err)
-		return NoResponseRiotApi(riotid)
+		return RiotApiError(riotid, err)
 	}
 
 	// Now it's safe to register the player
@@ -319,7 +321,7 @@ func (bot *Bot) unregister(riotid riotapi.RiotId, guildid string) []Response {
 	puuid, err := bot.riotapi.GetPuuid(riotid)
 	if err != nil {
 		log.Info().Err(err)
-		return NoResponseRiotApi(riotid)
+		return RiotAccountError(riotid, err)
 	}
 
 	// Check if the player was registered in the guild
@@ -328,7 +330,7 @@ func (bot *Bot) unregister(riotid riotapi.RiotId, guildid string) []Response {
 		return PlayerNotPreviouslyRegistered(riotid)
 	}
 
-	// Check if the player was registered in the guild
+	// Unregister
 	log.Info().Msg(fmt.Sprintf("Unregistering player %s from guild id %s", riotid, guildid))
 	removedFromGuild, removedCompletely := bot.removePlayerFromGuild(puuid, guildid)
 	if !removedFromGuild {
@@ -349,14 +351,16 @@ func (bot *Bot) rank(riotid riotapi.RiotId) []Response {
 	puuid, err := bot.riotapi.GetPuuid(riotid)
 	if err != nil {
 		log.Info().Err(err)
-		return NoResponseRiotApi(riotid)
+		return RiotAccountError(riotid, err)
 	}
 
 	// Get the rank of this player
 	leagues, err := bot.riotapi.GetLeagues(puuid)
-	if err != nil {
+	if errors.Is(err, common.ErrNotFound) {
+		leagues = []riotapi.League{}
+	} else if err != nil {
 		log.Info().Err(err)
-		return NoResponseRiotApi(riotid)
+		return RiotApiError(riotid, err)
 	}
 
 	// Send the final message

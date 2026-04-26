@@ -1,7 +1,9 @@
 package bot
 
 import (
+	"chanclol/internal/common"
 	"chanclol/internal/riotapi"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -68,8 +70,15 @@ func HelpMessage() []Response {
 	return []Response{ResponseEmbed{embed}}
 }
 
-func NoResponseRiotApi(riotid riotapi.RiotId) []Response {
-	return []Response{ResponseString{fmt.Sprintf("Got no response from Riot API for player `%s`", &riotid)}}
+func RiotAccountError(riotid riotapi.RiotId, err error) []Response {
+	if errors.Is(err, common.ErrNotFound) {
+		return []Response{ResponseString{fmt.Sprintf("Player `%s` does not exist", &riotid)}}
+	}
+	return RiotApiError(riotid, err)
+}
+
+func RiotApiError(riotid riotapi.RiotId, err error) []Response {
+	return []Response{ResponseString{fmt.Sprintf("I could not check player `%s` right now. Please try again in a bit", &riotid)}}
 }
 
 func PlayerAlreadyRegistered(riotid riotapi.RiotId) []Response {

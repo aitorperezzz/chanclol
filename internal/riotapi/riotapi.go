@@ -66,7 +66,7 @@ func (riotapi *RiotApi) GetRiotId(puuid Puuid) (RiotId, error) {
 	url := fmt.Sprintf(RIOT_SCHEMA, "europe") + fmt.Sprintf(ROUTE_ACCOUNT_RIOT_ID, puuid)
 	data, err := riotapi.requestData(url)
 	if errors.Is(err, common.ErrNotFound) {
-		return RiotId{}, fmt.Errorf("could not find riot id for puuid %s", puuid)
+		return RiotId{}, fmt.Errorf("%w: could not find riot id for puuid %s", common.ErrNotFound, puuid)
 	} else if err != nil {
 		return RiotId{}, err
 	}
@@ -94,7 +94,7 @@ func (riotapi *RiotApi) GetPuuid(riotid RiotId) (Puuid, error) {
 	url := fmt.Sprintf(RIOT_SCHEMA, "europe") + fmt.Sprintf(ROUTE_ACCOUNT_PUUID, riotid.GameName, riotid.TagLine)
 	data, err := riotapi.requestData(url)
 	if errors.Is(err, common.ErrNotFound) {
-		return "", fmt.Errorf("could not find puuid for riot id %s", riotid)
+		return "", fmt.Errorf("%w: could not find puuid for riot id %s", common.ErrNotFound, riotid)
 	} else if err != nil {
 		return "", err
 	}
@@ -138,7 +138,7 @@ func (riotapi *RiotApi) GetMastery(puuid Puuid, championId ChampionId) (Mastery,
 	url := fmt.Sprintf(RIOT_SCHEMA, "euw1") + fmt.Sprintf(ROUTE_MASTERY, puuid, championId)
 	data, err := riotapi.requestData(url)
 	if errors.Is(err, common.ErrNotFound) {
-		return Mastery{}, nil
+		return Mastery{}, fmt.Errorf("%w: no mastery found for puuid %s and champion %d", common.ErrNotFound, puuid, championId)
 	} else if err != nil {
 		return Mastery{}, err
 	}
@@ -152,7 +152,7 @@ func (riotapi *RiotApi) GetLeagues(puuid Puuid) ([]League, error) {
 	url := fmt.Sprintf(RIOT_SCHEMA, "euw1") + fmt.Sprintf(ROUTE_LEAGUE, puuid)
 	data, err := riotapi.requestData(url)
 	if errors.Is(err, common.ErrNotFound) {
-		return []League{}, nil
+		return nil, fmt.Errorf("%w: no leagues found for puuid %s", common.ErrNotFound, puuid)
 	} else if err != nil {
 		return nil, err
 	}

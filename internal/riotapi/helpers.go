@@ -3,6 +3,7 @@ package riotapi
 import (
 	"chanclol/internal/common"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -149,6 +150,9 @@ func BuildParticipantData(raw RawParticipant, riotapi *RiotApi) (Participant, er
 		if common.IsTemporaryRequestError(err) {
 			return participant, err
 		}
+		if !errors.Is(err, common.ErrNotFound) {
+			return participant, err
+		}
 		log.Debug().Msg(fmt.Sprintf("Mastery not available for puuid %s", string(raw.Puuid)))
 	}
 	participant.Mastery = mastery
@@ -156,7 +160,11 @@ func BuildParticipantData(raw RawParticipant, riotapi *RiotApi) (Participant, er
 	// leagues
 	var leagues []League
 	if leagues, err = riotapi.GetLeagues(raw.Puuid); err != nil {
-		return participant, err
+		if errors.Is(err, common.ErrNotFound) {
+			leagues = []League{}
+		} else {
+			return participant, err
+		}
 	}
 	participant.Leagues = leagues
 
