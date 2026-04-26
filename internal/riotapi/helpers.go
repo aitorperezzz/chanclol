@@ -130,14 +130,8 @@ func BuildParticipantData(raw RawParticipant, riotapi *RiotApi) (Participant, er
 	// (this is not documented in the official API)
 	index := strings.Index(raw.RiotId, "#")
 	if index == -1 {
-		log.Error().Msg(fmt.Sprintf("Riot id '%s' is not correctly formatted inside participant data", raw.RiotId))
-
-		// Try retrieving it through a normal API call
-		if riotid, err = riotapi.GetRiotId(raw.Puuid); err != nil {
-			log.Error().Msg(fmt.Sprintf("Could not retrieve riot id from puuid '%s'", raw.Puuid))
-			return participant, err
-		}
-
+		log.Debug().Msg(fmt.Sprintf("Participant is anonymous or has no Riot ID available: %s", raw.RiotId))
+		return participant, nil
 	} else {
 		riotid = RiotId{GameName: raw.RiotId[:index], TagLine: raw.RiotId[index+1:]}
 	}
