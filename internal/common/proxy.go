@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/rs/zerolog/log"
 )
@@ -78,6 +80,7 @@ func (proxy *Proxy) Request(url string, vital bool) []byte {
 		log.Error().Msg("Could not perform request")
 		return nil
 	}
+	defer res.Body.Close()
 
 	// Check if the status of the request is understood
 	message, ok := messages[res.StatusCode]
@@ -102,12 +105,11 @@ func (proxy *Proxy) Request(url string, vital bool) []byte {
 		return nil
 	case RATE_LIMIT_EXCEEDED:
 		log.Warn().Msg(logMessage)
-		proxy.rateLimiter.ReceivedRateLimit()
+		proxy.rateLimiter.ReceivedRateLimit(retryAfter(res.Header))
 		return nil
 	default:
 		log.Error().Msg(logMessage)
 		// Read body for more info
-		defer res.Body.Close()
 		bodyBytes, err := io.ReadAll(res.Body)
 		if err != nil {
 			log.Error().Err(err).Msg("Could not read response body")
@@ -121,4 +123,21 @@ func (proxy *Proxy) Request(url string, vital bool) []byte {
 		}
 		return nil
 	}
+}
+
+func retryAfter(header http.Header) time.Duration {
+	for _, name := range []string{"Retry-After", "X-Rate-Limit-Reset-After"} {
+		value := header.Get(name)
+		if value == "" {
+			continue
+		}
+		seconds, err := strconv.ParseFloat(value, 64)
+		if err != nil {
+			log.Warn().Err(err).Msg(fmt.Sprintf("Could not parse %s header %q", name, value))
+			continue
+		}
+		return time.Duration(seconds*float64(time.Second)) + 250*time.Millisecond
+	}
+
+	return 0
 }
