@@ -21,6 +21,7 @@ type RateLimiter struct {
 	duration             time.Duration          // Min duration to wait for all restrictions to be lifted
 	pendingVitalRequests map[uuid.UUID]struct{} // Set of pending vital requests
 	stopwatch            Stopwatch
+	mu                   *sync.Mutex
 }
 
 func NewRateLimiter(restrictions []Restriction) RateLimiter {
@@ -39,6 +40,8 @@ func NewRateLimiter(restrictions []Restriction) RateLimiter {
 	rl.pendingVitalRequests = make(map[uuid.UUID]struct{})
 	// Initialise a stopwatch
 	rl.stopwatch.Timeout = rl.duration
+	// Initialise mutex
+	rl.mu = &sync.Mutex{}
 
 	return rl
 }
@@ -55,6 +58,7 @@ func (rl *RateLimiter) Allowed(vital bool, allowed chan bool) {
 	// Give this request a unique identifier
 	thisuuid := uuid.New()
 	for {
+		rl.mu.Lock()
 		// Trim history first
 		rl.trim()
 		// Check if the restrictions allow this request
@@ -63,15 +67,14 @@ func (rl *RateLimiter) Allowed(vital bool, allowed chan bool) {
 			if vital || (!vital && len(rl.pendingVitalRequests) == 0) {
 				log.Debug().Msg("Allowing request")
 				// Remove the uuid in case it is there
-				for uuid := range rl.pendingVitalRequests {
-					if thisuuid == uuid {
-						delete(rl.pendingVitalRequests, thisuuid)
-						log.Warn().Msg(fmt.Sprint("Serving delayed vital request ", thisuuid))
-						logNumDelayedVitalRequests()
-					}
+				if _, ok := rl.pendingVitalRequests[thisuuid]; ok {
+					delete(rl.pendingVitalRequests, thisuuid)
+					log.Warn().Msg(fmt.Sprint("Serving delayed vital request ", thisuuid))
+					logNumDelayedVitalRequests()
 				}
 				// Include this request in the history as it is allowed
 				rl.history = append(rl.history, time.Now())
+				rl.mu.Unlock()
 				allowed <- true
 				return
 
@@ -79,11 +82,13 @@ func (rl *RateLimiter) Allowed(vital bool, allowed chan bool) {
 				// Request is not vital and the queue is not empty,
 				// so we have to reject the request
 				log.Warn().Msg("Rejecting non vital request because restrictions allow it but vital queue is not empty")
+				rl.mu.Unlock()
 				allowed <- false
 				return
 			}
 		} else if !vital {
 			log.Warn().Msg("Rejecting a non vital request because restrictions do not allow it")
+			rl.mu.Unlock()
 			allowed <- false
 			return
 		} else {
@@ -96,19 +101,23 @@ func (rl *RateLimiter) Allowed(vital bool, allowed chan bool) {
 			// and sleep for some time
 			log.Warn().Msg(fmt.Sprint("Vital request ", thisuuid, " delayed ", analysis.wait))
 			logNumDelayedVitalRequests()
-			var wg sync.WaitGroup
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				time.Sleep(analysis.wait)
-			}()
-			wg.Wait()
+			rl.mu.Unlock()
+			time.Sleep(analysis.wait)
 		}
 	}
 }
 
-func (rl *RateLimiter) ReceivedRateLimit() {
-	log.Warn().Msg("Received rate limit")
+func (rl *RateLimiter) ReceivedRateLimit(wait time.Duration) {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	if wait <= 0 {
+		wait = rl.duration
+	}
+
+	log.Warn().Msg(fmt.Sprintf("Received rate limit. Waiting %s before allowing more vital requests", wait))
+	rl.history = nil
+	rl.stopwatch.Timeout = wait
 	rl.stopwatch.Start()
 }
 

@@ -1,7 +1,8 @@
 .vscode/
 chanclol
 .env
-*.db
+.swp
 *.log
 .cache/
 coverage.out
+data/

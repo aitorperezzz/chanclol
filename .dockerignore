@@ -5,6 +5,7 @@ dist/
 
 # Runtime state and secrets
 .env
+data/
 *.db
 *.log
 
