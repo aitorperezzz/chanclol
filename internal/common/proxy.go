@@ -1,6 +1,7 @@
 package common
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -9,6 +10,19 @@ import (
 
 	"github.com/rs/zerolog/log"
 )
+
+var (
+	ErrNotFound        = errors.New("resource not found")
+	ErrRateLimited     = errors.New("rate limited")
+	ErrRequestRejected = errors.New("request rejected by local rate limiter")
+	ErrRequestFailed   = errors.New("request failed")
+)
+
+func IsTemporaryRequestError(err error) bool {
+	return errors.Is(err, ErrRateLimited) ||
+		errors.Is(err, ErrRequestRejected) ||
+		errors.Is(err, ErrRequestFailed)
+}
 
 const (
 	OK                     int = 200
@@ -53,6 +67,14 @@ func NewProxy(header map[string]string, restrictions []Restriction) Proxy {
 // Make a request to the provided url, indicating if it is vital.
 // The request will be performed depending on the status of the rate limiter
 func (proxy *Proxy) Request(url string, vital bool) []byte {
+	data, err := proxy.RequestData(url, vital)
+	if err != nil {
+		return nil
+	}
+	return data
+}
+
+func (proxy *Proxy) RequestData(url string, vital bool) ([]byte, error) {
 
 	// ask for permission to execute the request
 	// and wait if necessary
@@ -61,14 +83,14 @@ func (proxy *Proxy) Request(url string, vital bool) []byte {
 	allowed := <-allowedChan
 	if !allowed {
 		log.Warn().Msg("Rate limiter is not allowing the request")
-		return nil
+		return nil, ErrRequestRejected
 	}
 
 	// Create the request and add the header
 	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		log.Error().Msg(fmt.Sprintf("Could not create request for url %s", url))
-		return nil
+		return nil, fmt.Errorf("%w: could not create request", ErrRequestFailed)
 	}
 	for key, value := range proxy.header {
 		request.Header.Set(key, value)
@@ -78,7 +100,7 @@ func (proxy *Proxy) Request(url string, vital bool) []byte {
 	res, err := proxy.client.Do(request)
 	if err != nil {
 		log.Error().Msg("Could not perform request")
-		return nil
+		return nil, fmt.Errorf("%w: %v", ErrRequestFailed, err)
 	}
 	defer res.Body.Close()
 
@@ -86,7 +108,7 @@ func (proxy *Proxy) Request(url string, vital bool) []byte {
 	message, ok := messages[res.StatusCode]
 	if !ok {
 		log.Error().Msg(fmt.Sprintf("Status code of request (%d) is not understood", res.StatusCode))
-		return nil
+		return nil, fmt.Errorf("%w: unexpected status code %d", ErrRequestFailed, res.StatusCode)
 	}
 
 	logMessage := fmt.Sprintf("%d %s", res.StatusCode, message)
@@ -97,23 +119,23 @@ func (proxy *Proxy) Request(url string, vital bool) []byte {
 		stream, err := io.ReadAll(res.Body)
 		if err != nil {
 			log.Debug().Msg(fmt.Sprintf("Could not extract the response for url %s", url))
-			return nil
+			return nil, fmt.Errorf("%w: could not read response body", ErrRequestFailed)
 		}
-		return stream
+		return stream, nil
 	case DATA_NOT_FOUND:
 		log.Debug().Msg(logMessage)
-		return nil
+		return nil, ErrNotFound
 	case RATE_LIMIT_EXCEEDED:
 		log.Warn().Msg(logMessage)
 		proxy.rateLimiter.ReceivedRateLimit(retryAfter(res.Header))
-		return nil
+		return nil, ErrRateLimited
 	default:
 		log.Error().Msg(logMessage)
 		// Read body for more info
 		bodyBytes, err := io.ReadAll(res.Body)
 		if err != nil {
 			log.Error().Err(err).Msg("Could not read response body")
-			return nil
+			return nil, fmt.Errorf("%w: status %d and unreadable body", ErrRequestFailed, res.StatusCode)
 		}
 		// Print the raw body
 		log.Error().Msgf("Body: %s", string(bodyBytes))
@@ -121,7 +143,7 @@ func (proxy *Proxy) Request(url string, vital bool) []byte {
 		for key, val := range res.Header {
 			log.Debug().Msgf("Header %s: %v", key, val)
 		}
-		return nil
+		return nil, fmt.Errorf("%w: status %d: %s", ErrRequestFailed, res.StatusCode, string(bodyBytes))
 	}
 }
 

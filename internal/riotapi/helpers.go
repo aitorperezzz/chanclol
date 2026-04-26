@@ -1,6 +1,7 @@
 package riotapi
 
 import (
+	"chanclol/internal/common"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -99,6 +100,9 @@ func BuildSpectator(data []byte, riotapi *RiotApi) (Spectator, error) {
 		// some participant data is missing or contains errors
 		participant, err := BuildParticipantData(rawParticipant, riotapi)
 		if err != nil {
+			if common.IsTemporaryRequestError(err) {
+				return Spectator{}, err
+			}
 			log.Error().Msg(fmt.Sprintf("Error building participant data for game id %d:", raw.GameId))
 			log.Error().Msg(err.Error())
 		}
@@ -140,10 +144,11 @@ func BuildParticipantData(raw RawParticipant, riotapi *RiotApi) (Participant, er
 	// at this point the riot id is valid and we can use it to retrieve the rest of the information
 
 	// champion mastery
-	// TODO: I cannot distinguish if mastery is not available or
-	// I have a problem connecting to riot API
 	var mastery Mastery
 	if mastery, err = riotapi.GetMastery(raw.Puuid, raw.ChampionId); err != nil {
+		if common.IsTemporaryRequestError(err) {
+			return participant, err
+		}
 		log.Debug().Msg(fmt.Sprintf("Mastery not available for puuid %s", string(raw.Puuid)))
 	}
 	participant.Mastery = mastery

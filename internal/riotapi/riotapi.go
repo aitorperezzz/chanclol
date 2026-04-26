@@ -3,6 +3,7 @@ package riotapi
 import (
 	"chanclol/internal/common"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -60,14 +61,16 @@ func (riotapi *RiotApi) GetRiotId(puuid Puuid) (RiotId, error) {
 
 	// Request
 	url := fmt.Sprintf(RIOT_SCHEMA, "europe") + fmt.Sprintf(ROUTE_ACCOUNT_RIOT_ID, puuid)
-	data := riotapi.request(url)
-	if data == nil {
+	data, err := riotapi.requestData(url)
+	if errors.Is(err, common.ErrNotFound) {
 		return RiotId{}, fmt.Errorf("could not find riot id for puuid %s", puuid)
+	} else if err != nil {
+		return RiotId{}, err
 	}
 
 	// Decode
 	var riotid RiotId
-	if err := json.Unmarshal(data, &riotid); err != nil {
+	if err = json.Unmarshal(data, &riotid); err != nil {
 		return RiotId{}, err
 	}
 	log.Debug().Msg(fmt.Sprintf("Found riot id %s for puuid %s", riotid, puuid))
@@ -89,9 +92,11 @@ func (riotapi *RiotApi) GetPuuid(riotid RiotId) (Puuid, error) {
 
 	// Request
 	url := fmt.Sprintf(RIOT_SCHEMA, "europe") + fmt.Sprintf(ROUTE_ACCOUNT_PUUID, riotid.GameName, riotid.TagLine)
-	data := riotapi.request(url)
-	if data == nil {
+	data, err := riotapi.requestData(url)
+	if errors.Is(err, common.ErrNotFound) {
 		return "", fmt.Errorf("could not find puuid for riot id %s", riotid)
+	} else if err != nil {
+		return "", err
 	}
 
 	// Decode
@@ -118,7 +123,9 @@ func (riotapi *RiotApi) GetPuuid(riotid RiotId) (Puuid, error) {
 func (riotapi *RiotApi) GetChampionName(championId ChampionId) (string, error) {
 
 	if len(riotapi.champions) == 0 {
-		riotapi.getChampionData()
+		if err := riotapi.getChampionData(); err != nil {
+			return "", err
+		}
 	}
 
 	championName, ok := riotapi.champions[championId]
@@ -133,9 +140,11 @@ func (riotapi *RiotApi) GetMastery(puuid Puuid, championId ChampionId) (Mastery,
 
 	// Request
 	url := fmt.Sprintf(RIOT_SCHEMA, "euw1") + fmt.Sprintf(ROUTE_MASTERY, puuid, championId)
-	data := riotapi.request(url)
-	if data == nil {
-		return Mastery{}, fmt.Errorf("could not find mastery for puuid %s and champion id %d", puuid, championId)
+	data, err := riotapi.requestData(url)
+	if errors.Is(err, common.ErrNotFound) {
+		return Mastery{}, nil
+	} else if err != nil {
+		return Mastery{}, err
 	}
 
 	return UnmarshalMastery(data)
@@ -145,9 +154,11 @@ func (riotapi *RiotApi) GetLeagues(puuid Puuid) ([]League, error) {
 
 	// Request
 	url := fmt.Sprintf(RIOT_SCHEMA, "euw1") + fmt.Sprintf(ROUTE_LEAGUE, puuid)
-	data := riotapi.request(url)
-	if data == nil {
-		return nil, fmt.Errorf("no leagues found for puuid %s", puuid)
+	data, err := riotapi.requestData(url)
+	if errors.Is(err, common.ErrNotFound) {
+		return []League{}, nil
+	} else if err != nil {
+		return nil, err
 	}
 
 	leagues, err := UnmarshalLeagues(data)
@@ -162,10 +173,12 @@ func (riotapi *RiotApi) GetSpectator(puuid Puuid) (Spectator, error) {
 
 	// Request
 	url := fmt.Sprintf(RIOT_SCHEMA, "euw1") + fmt.Sprintf(ROUTE_SPECTATOR, puuid)
-	data := riotapi.request(url)
-	if data == nil {
+	data, err := riotapi.requestData(url)
+	if errors.Is(err, common.ErrNotFound) {
 		riotapi.trimSpectatorCache(puuid)
-		return Spectator{}, fmt.Errorf("no spectator data found for puuid %s", puuid)
+		return Spectator{}, common.ErrNotFound
+	} else if err != nil {
+		return Spectator{}, err
 	}
 
 	riotid, err := riotapi.GetRiotId(puuid)
@@ -201,9 +214,9 @@ func (riotapi *RiotApi) getChampionData() error {
 
 	// Request
 	url := fmt.Sprintf(ROUTE_CHAMPIONS, riotapi.version)
-	data := riotapi.request(url)
-	if data == nil {
-		return fmt.Errorf("could not request champion data")
+	data, err := riotapi.requestData(url)
+	if err != nil {
+		return fmt.Errorf("could not request champion data: %w", err)
 	}
 
 	// Extract
@@ -265,10 +278,17 @@ func (riotapi *RiotApi) GetGameIds(puuid Puuid) map[GameId]struct{} {
 }
 
 func (riotapi *RiotApi) request(url string) []byte {
+	data, err := riotapi.requestData(url)
+	if err != nil {
+		return nil
+	}
+	return data
+}
 
+func (riotapi *RiotApi) requestData(url string) ([]byte, error) {
 	vital := !strings.Contains(url, fmt.Sprintf(ROUTE_SPECTATOR, ""))
 	log.Debug().Msg(fmt.Sprintf("Requesting to url %s", url))
-	return riotapi.proxy.Request(url, vital)
+	return riotapi.proxy.RequestData(url, vital)
 }
 
 func (riotapi *RiotApi) Housekeeping(puuidsToKeep map[Puuid]struct{}) {

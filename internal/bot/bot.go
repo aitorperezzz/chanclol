@@ -3,6 +3,7 @@ package bot
 import (
 	"chanclol/internal/common"
 	"chanclol/internal/riotapi"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -419,11 +420,13 @@ func (bot *Bot) loop() {
 		player := bot.players[puuid]
 		player.StopWatch.Start()
 		if err != nil {
-			log.Debug().Msg(fmt.Sprintf("Spectator data for player %s is not available", riotid))
-			// Player is offline, update timeout if needed
-			// TODO: could be an error of the riot api, and the player could be online
-			if player.UpdateCheckTimeout(false, bot.offlineThreshold, bot.onlineTimeout, bot.offlineTimeout) {
-				log.Info().Msg(fmt.Sprintf("Player %s is now offline", riotid))
+			if errors.Is(err, common.ErrNotFound) {
+				log.Debug().Msg(fmt.Sprintf("Spectator data for player %s is not available", riotid))
+				if player.UpdateCheckTimeout(false, bot.offlineThreshold, bot.onlineTimeout, bot.offlineTimeout) {
+					log.Info().Msg(fmt.Sprintf("Player %s is now offline", riotid))
+				}
+			} else {
+				log.Warn().Err(err).Msg(fmt.Sprintf("Could not check spectator data for player %s", riotid))
 			}
 			continue
 		}
