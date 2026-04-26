@@ -113,6 +113,10 @@ func ChannelDoesNotExist(channelName string) []Response {
 	return []Response{ResponseString{fmt.Sprintf("Channel `%s` does not exist in this server", channelName)}}
 }
 
+func ChannelDisappeared(newChannelName string) []Response {
+	return []Response{ResponseString{fmt.Sprintf("The previous configured channel no longer exists. Using channel `%s` from now on", newChannelName)}}
+}
+
 func ChannelChanged(channelName string) []Response {
 	return []Response{ResponseString{fmt.Sprintf("From now on, I will be sending ingame messages to `%s`", channelName)}}
 }

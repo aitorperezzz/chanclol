@@ -165,30 +165,10 @@ func (bot *Bot) Receive(discord *discordgo.Session, message *discordgo.MessageCr
 		return
 	}
 
-	// Register the guild if it's the first time I see it
-	if _, ok := bot.guilds[message.GuildID]; !ok {
-		log.Info().Msg(fmt.Sprintf("Initialising guild %s", message.GuildID))
-		guild := Guild{id: message.GuildID, channelId: message.ChannelID}
-		guild.lastInformedGameIds = make(map[riotapi.Puuid]riotapi.GameId)
-		bot.guilds[message.GuildID] = &guild
-		bot.database.AddGuild(message.GuildID, message.ChannelID)
-		log.Info().Msg("Sending welcome message")
-
-		// extract the name of the channel
-		channelName, err := bot.getChannelName(discord, message.GuildID, message.ChannelID)
-		if err != nil {
-			log.Info().Msg(fmt.Sprintf("Could not extract channel name for channel id %s", message.ChannelID))
-			return
-		}
-
-		// Send welcome message
-		bot.sendResponsesToChannel(Welcome(channelName), message.ChannelID)
-	}
-	guild := bot.guilds[message.GuildID]
-
 	// Parse the input provided and call the appropriate function
 	log.Debug().Msg(fmt.Sprintf("Received message: %s", message.Content))
 	parseResult := Parse(message.Content)
+
 	switch parseResult.parseid {
 	case PARSEID_NO_BOT_PREFIX:
 		log.Debug().Msg("Rejecting message not intended for the bot")
@@ -196,39 +176,73 @@ func (bot *Bot) Receive(discord *discordgo.Session, message *discordgo.MessageCr
 	case PARSEID_OK:
 		log.Info().Msg(fmt.Sprintf("Command understood: %s", message.Content))
 		var responses []Response
+
+		// Extract the name of the channel that has sent the message
+		channelName, err := bot.getChannelName(discord, message.GuildID, message.ChannelID)
+		if err != nil {
+			log.Error().Msg(fmt.Sprintf("Could not extract channel name for channel id %s", message.ChannelID))
+			return
+		}
+
+		// Register the guild if it's the first time I see it
+		if _, ok := bot.guilds[message.GuildID]; !ok {
+			log.Info().Msg(fmt.Sprintf("Initialising guild %s", message.GuildID))
+			guild := Guild{id: message.GuildID, channelId: message.ChannelID}
+			guild.lastInformedGameIds = make(map[riotapi.Puuid]riotapi.GameId)
+			bot.guilds[message.GuildID] = &guild
+			bot.database.AddGuild(message.GuildID, message.ChannelID)
+			// Send welcome message
+			log.Info().Msg("Sending welcome message")
+			responses = append(responses, Welcome(channelName)...)
+		}
+		guild := bot.guilds[message.GuildID]
+
+		// If this is an old guild, take the opportunity to check if the
+		// configured channel still exists. If it does not, update the channel
+		// and notify
+		configuredChannelName, err := bot.getChannelName(discord, message.GuildID, guild.channelId)
+		if err != nil {
+			guild.channelId = message.ChannelID
+			bot.database.SetChannel(guild.id, message.ChannelID)
+			configuredChannelName = channelName
+			log.Info().Msg(fmt.Sprintf("Updated the channel for in-game messages to %s", channelName))
+			responses = append(responses, ChannelDisappeared(channelName)...)
+		}
+
+		// Decide according to the command
 		switch parseResult.command {
 		case COMMAND_REGISTER:
 			switch riotid := parseResult.arguments.(type) {
 			default:
 				panic(fmt.Sprintf("unexpected type of riot id %T", riotid))
 			case riotapi.RiotId:
-				responses = bot.register(riotid, guild)
+				responses = append(responses, bot.register(riotid, guild)...)
 			}
 		case COMMAND_UNREGISTER:
 			switch riotid := parseResult.arguments.(type) {
 			default:
 				panic(fmt.Sprintf("unexpected type of riot id %T", riotid))
 			case riotapi.RiotId:
-				responses = bot.unregister(riotid, guild)
+				responses = append(responses, bot.unregister(riotid, guild)...)
 			}
 		case COMMAND_RANK:
 			switch riotid := parseResult.arguments.(type) {
 			default:
 				panic(fmt.Sprintf("unexpected type of riot id %T", riotid))
 			case riotapi.RiotId:
-				responses = bot.rank(riotid)
+				responses = append(responses, bot.rank(riotid)...)
 			}
 		case COMMAND_CHANNEL:
 			switch channelName := parseResult.arguments.(type) {
 			default:
 				panic(fmt.Sprintf("unexpected type of channel name %T", channelName))
 			case string:
-				responses = bot.channel(discord, channelName, guild)
+				responses = append(responses, bot.channel(discord, channelName, guild)...)
 			}
 		case COMMAND_STATUS:
-			responses = bot.status(discord, guild)
+			responses = append(responses, bot.status(discord, guild, configuredChannelName)...)
 		case COMMAND_HELP:
-			responses = HelpMessage()
+			responses = append(responses, HelpMessage()...)
 		default:
 			panic(fmt.Sprintf("Command %d is not one of the possible ones", parseResult.command))
 		}
@@ -365,16 +379,7 @@ func (bot *Bot) channel(discord *discordgo.Session, channelName string, guild *G
 	return ChannelChanged(channelName)
 }
 
-func (bot *Bot) status(discord *discordgo.Session, guild *Guild) []Response {
-
-	// Very bad error if I cannot find the name of the channel to which
-	// I am sending the messages
-	// TODO: maybe finish this gracefully by updating the channel to the one
-	// being used to send this message
-	channelName, err := bot.getChannelName(discord, guild.id, guild.channelId)
-	if err != nil {
-		panic(fmt.Sprintf("Could not find channel name for channel id %s", guild.channelId))
-	}
+func (bot *Bot) status(discord *discordgo.Session, guild *Guild, configuredChannelName string) []Response {
 
 	// Create list of player names in this guild
 	riotIds := []riotapi.RiotId{}
@@ -385,7 +390,7 @@ func (bot *Bot) status(discord *discordgo.Session, guild *Guild) []Response {
 		}
 		riotIds = append(riotIds, riotid)
 	}
-	return StatusMessage(riotIds, channelName)
+	return StatusMessage(riotIds, configuredChannelName)
 }
 
 func (bot *Bot) loop() {
