@@ -1,21 +1,21 @@
 {
-    "log_filename": "chanclol.log",
-    "log_level": "INFO",
-    "database_filename_bot": "bot.db",
-    "database_filename_riotapi": "riotapi.db",
-    "offline_threshold_mins": 30,
-    "timeout_online_secs": 15,
-    "timeout_offline_secs": 60,
-    "main_loop_cycle_secs": 5,
-    "riotapi_housekeeping_cycle_hrs": 6,
-    "restrictions": [
-        {
-            "num_requests": 20,
-            "interval_seconds": 1
-        },
-        {
-            "num_requests": 100,
-            "interval_seconds": 120
-        }
-    ]
+  "log_filename": "chanclol.log",
+  "log_level": "INFO",
+  "database_filename_bot": "data/db_bot.json",
+  "database_filename_riotapi": "data/db_riotapi.json",
+  "offline_threshold_mins": 30,
+  "timeout_online_secs": 15,
+  "timeout_offline_secs": 60,
+  "main_loop_cycle_secs": 5,
+  "riotapi_housekeeping_cycle_hrs": 6,
+  "restrictions": [
+    {
+      "num_requests": 20,
+      "interval_seconds": 1
+    },
+    {
+      "num_requests": 100,
+      "interval_seconds": 120
+    }
+  ]
 }

@@ -8,3 +8,5 @@ services:
       - .env
     environment:
       - TZ=Europe/Berlin
+    volumes:
+      - ./data:/app/data

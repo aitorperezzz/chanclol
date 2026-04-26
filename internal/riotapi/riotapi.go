@@ -40,7 +40,7 @@ func NewRiotApi(dbFilename string, apiKey string, restrictions []common.Restrict
 
 	var riotapi RiotApi
 
-	riotapi.database = CreatDatabaseRiotApi(dbFilename)
+	riotapi.database = CreateDatabaseRiotApi(dbFilename)
 	riotapi.champions = riotapi.database.GetChampions()
 	riotapi.riotIds = riotapi.database.GetRiotIds()
 	riotapi.version = riotapi.database.GetVersion()

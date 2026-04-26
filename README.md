@@ -32,6 +32,8 @@ By default, Docker Compose uses the local image name `chanclol:latest`. To run a
 IMAGE=registry.example.com/chanclol:latest docker compose up -d
 ```
 
+The compose file stores runtime state in the local `./data` directory, mounted as `/app/data` in the container. The database file paths are defined in `config.json` and the directory is created automatically when the application saves data.
+
 You can also run the application locally with Go installed:
 
 ```sh
@@ -39,7 +41,7 @@ go test ./...
 go run .
 ```
 
-By default, local runs read `config.json` and store the bot database files in the current directory.
+By default, local runs read `config.json` and store the bot database files in `./data`.
 
 ## Container image
 
