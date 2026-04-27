@@ -3,9 +3,11 @@ package riotapi
 import (
 	"chanclol/internal/common"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/rs/zerolog/log"
 )
@@ -28,11 +30,14 @@ const ROUTE_SPECTATOR = "/lol/spectator/v5/active-games/by-summoner/%s"
 const ROUTE_CHAMPIONS = "http://ddragon.leagueoflegends.com/cdn/%s/data/en_US/champion.json"
 
 type RiotApi struct {
-	database       DatabaseRiotApi
-	champions      map[ChampionId]string
-	riotIds        map[Puuid]RiotId
-	version        string
-	proxy          common.Proxy
+	database  DatabaseRiotApi
+	mu        *sync.RWMutex
+	champions map[ChampionId]string
+	riotIds   map[Puuid]RiotId
+	version   string
+	proxy     common.Proxy
+	// requestDataFn defaults to proxy.RequestData and is replaceable in tests.
+	requestDataFn  func(url string, vital bool) ([]byte, error)
 	spectatorCache map[GameId]Spectator
 }
 
@@ -41,10 +46,12 @@ func NewRiotApi(dbFilename string, apiKey string, restrictions []common.Restrict
 	var riotapi RiotApi
 
 	riotapi.database = CreateDatabaseRiotApi(dbFilename)
+	riotapi.mu = &sync.RWMutex{}
 	riotapi.champions = riotapi.database.GetChampions()
 	riotapi.riotIds = riotapi.database.GetRiotIds()
 	riotapi.version = riotapi.database.GetVersion()
 	riotapi.proxy = common.NewProxy(map[string]string{"X-Riot-Token": apiKey}, restrictions)
+	riotapi.requestDataFn = riotapi.proxy.RequestData
 	riotapi.spectatorCache = map[GameId]Spectator{}
 
 	return riotapi
@@ -53,45 +60,46 @@ func NewRiotApi(dbFilename string, apiKey string, restrictions []common.Restrict
 func (riotapi *RiotApi) GetRiotId(puuid Puuid) (RiotId, error) {
 
 	// Check cache
-	if riotid, ok := riotapi.riotIds[puuid]; ok {
+	if riotid, ok := riotapi.cachedRiotId(puuid); ok {
 		return riotid, nil
 	}
 	log.Debug().Msg(fmt.Sprintf("Riot id for puuid %s is not in the cache", puuid))
 
 	// Request
 	url := fmt.Sprintf(RIOT_SCHEMA, "europe") + fmt.Sprintf(ROUTE_ACCOUNT_RIOT_ID, puuid)
-	data := riotapi.request(url)
-	if data == nil {
-		return RiotId{}, fmt.Errorf("could not find riot id for puuid %s", puuid)
+	data, err := riotapi.requestData(url)
+	if errors.Is(err, common.ErrNotFound) {
+		return RiotId{}, fmt.Errorf("%w: could not find riot id for puuid %s", common.ErrNotFound, puuid)
+	} else if err != nil {
+		return RiotId{}, err
 	}
 
 	// Decode
 	var riotid RiotId
-	if err := json.Unmarshal(data, &riotid); err != nil {
+	if err = json.Unmarshal(data, &riotid); err != nil {
 		return RiotId{}, err
 	}
 	log.Debug().Msg(fmt.Sprintf("Found riot id %s for puuid %s", riotid, puuid))
 
-	// Update cache
-	riotapi.riotIds[puuid] = riotid
-	riotapi.database.SetRiotId(puuid, riotid)
+	// Store the account mapping in memory and on disk.
+	riotapi.cacheRiotId(puuid, riotid)
 	return riotid, nil
 }
 
 func (riotapi *RiotApi) GetPuuid(riotid RiotId) (Puuid, error) {
 
 	// Check cache
-	for key, value := range riotapi.riotIds {
-		if value == riotid {
-			return key, nil
-		}
+	if puuid, ok := riotapi.cachedPuuid(riotid); ok {
+		return puuid, nil
 	}
 
 	// Request
 	url := fmt.Sprintf(RIOT_SCHEMA, "europe") + fmt.Sprintf(ROUTE_ACCOUNT_PUUID, riotid.GameName, riotid.TagLine)
-	data := riotapi.request(url)
-	if data == nil {
-		return "", fmt.Errorf("could not find puuid for riot id %s", riotid)
+	data, err := riotapi.requestData(url)
+	if errors.Is(err, common.ErrNotFound) {
+		return "", fmt.Errorf("%w: could not find puuid for riot id %s", common.ErrNotFound, riotid)
+	} else if err != nil {
+		return "", err
 	}
 
 	// Decode
@@ -100,28 +108,26 @@ func (riotapi *RiotApi) GetPuuid(riotid RiotId) (Puuid, error) {
 		return "", err
 	}
 
-	// Update cache
-	// Take care here because maybe I have an old riot id that I need to update
-	if _, ok := riotapi.riotIds[puuid]; ok {
+	// Store the account mapping in memory and on disk.
+	// Take care here because maybe I have an old riot id that I need to update.
+	if existed := riotapi.cacheRiotId(puuid, riotid); existed {
 		log.Debug().Msg(fmt.Sprintf("Updating riot id %s for puuid %s", riotid, puuid))
 	} else {
 		log.Debug().Msg(fmt.Sprintf("Found puuid %s for riot id %s", puuid, riotid))
 	}
-	riotapi.riotIds[puuid] = riotid
-
-	// Database
-	riotapi.database.SetRiotId(puuid, riotid)
 
 	return puuid, nil
 }
 
 func (riotapi *RiotApi) GetChampionName(championId ChampionId) (string, error) {
 
-	if len(riotapi.champions) == 0 {
-		riotapi.getChampionData()
+	if !riotapi.championsLoaded() {
+		if err := riotapi.getChampionData(); err != nil {
+			return "", err
+		}
 	}
 
-	championName, ok := riotapi.champions[championId]
+	championName, ok := riotapi.cachedChampionName(championId)
 	if !ok {
 		return "", fmt.Errorf("could not find champion name for champion id %d", championId)
 	}
@@ -133,9 +139,11 @@ func (riotapi *RiotApi) GetMastery(puuid Puuid, championId ChampionId) (Mastery,
 
 	// Request
 	url := fmt.Sprintf(RIOT_SCHEMA, "euw1") + fmt.Sprintf(ROUTE_MASTERY, puuid, championId)
-	data := riotapi.request(url)
-	if data == nil {
-		return Mastery{}, fmt.Errorf("could not find mastery for puuid %s and champion id %d", puuid, championId)
+	data, err := riotapi.requestData(url)
+	if errors.Is(err, common.ErrNotFound) {
+		return Mastery{}, fmt.Errorf("%w: no mastery found for puuid %s and champion %d", common.ErrNotFound, puuid, championId)
+	} else if err != nil {
+		return Mastery{}, err
 	}
 
 	return UnmarshalMastery(data)
@@ -145,9 +153,11 @@ func (riotapi *RiotApi) GetLeagues(puuid Puuid) ([]League, error) {
 
 	// Request
 	url := fmt.Sprintf(RIOT_SCHEMA, "euw1") + fmt.Sprintf(ROUTE_LEAGUE, puuid)
-	data := riotapi.request(url)
-	if data == nil {
-		return nil, fmt.Errorf("no leagues found for puuid %s", puuid)
+	data, err := riotapi.requestData(url)
+	if errors.Is(err, common.ErrNotFound) {
+		return nil, fmt.Errorf("%w: no leagues found for puuid %s", common.ErrNotFound, puuid)
+	} else if err != nil {
+		return nil, err
 	}
 
 	leagues, err := UnmarshalLeagues(data)
@@ -162,10 +172,12 @@ func (riotapi *RiotApi) GetSpectator(puuid Puuid) (Spectator, error) {
 
 	// Request
 	url := fmt.Sprintf(RIOT_SCHEMA, "euw1") + fmt.Sprintf(ROUTE_SPECTATOR, puuid)
-	data := riotapi.request(url)
-	if data == nil {
+	data, err := riotapi.requestData(url)
+	if errors.Is(err, common.ErrNotFound) {
 		riotapi.trimSpectatorCache(puuid)
-		return Spectator{}, fmt.Errorf("no spectator data found for puuid %s", puuid)
+		return Spectator{}, common.ErrNotFound
+	} else if err != nil {
+		return Spectator{}, err
 	}
 
 	riotid, err := riotapi.GetRiotId(puuid)
@@ -179,7 +191,7 @@ func (riotapi *RiotApi) GetSpectator(puuid Puuid) (Spectator, error) {
 	if err != nil {
 		return Spectator{}, err
 	}
-	if spectator, ok := riotapi.spectatorCache[gameId]; ok {
+	if spectator, ok := riotapi.cachedSpectator(gameId); ok {
 		log.Debug().Msg(fmt.Sprintf("Player %s is in a cached game", &riotid))
 		return spectator, nil
 	}
@@ -192,7 +204,7 @@ func (riotapi *RiotApi) GetSpectator(puuid Puuid) (Spectator, error) {
 	}
 
 	// Add game to the cache
-	riotapi.spectatorCache[gameId] = spectator
+	riotapi.cacheSpectator(gameId, spectator)
 
 	return spectator, nil
 }
@@ -200,10 +212,10 @@ func (riotapi *RiotApi) GetSpectator(puuid Puuid) (Spectator, error) {
 func (riotapi *RiotApi) getChampionData() error {
 
 	// Request
-	url := fmt.Sprintf(ROUTE_CHAMPIONS, riotapi.version)
-	data := riotapi.request(url)
-	if data == nil {
-		return fmt.Errorf("could not request champion data")
+	url := fmt.Sprintf(ROUTE_CHAMPIONS, riotapi.currentVersion())
+	data, err := riotapi.requestData(url)
+	if err != nil {
+		return fmt.Errorf("could not request champion data: %w", err)
 	}
 
 	// Extract
@@ -217,17 +229,17 @@ func (riotapi *RiotApi) getChampionData() error {
 		return fmt.Errorf("champion data in response is not correctly formatted")
 	}
 
-	// Update cache
+	// Store champion data in memory and on disk.
+	champions := make(map[ChampionId]string, len(raw.Data))
 	for _, champion := range raw.Data {
 		if championId, err := strconv.Atoi(champion.Key); err != nil {
 			return fmt.Errorf("champion id is not correctly formatted in response: %s", champion.Key)
 		} else {
-			riotapi.champions[ChampionId(championId)] = champion.Id
+			champions[ChampionId(championId)] = champion.Id
 		}
 	}
 
-	// Database
-	riotapi.database.SetChampions(riotapi.champions)
+	riotapi.replaceChampions(champions)
 
 	return nil
 }
@@ -235,40 +247,27 @@ func (riotapi *RiotApi) getChampionData() error {
 func (riotapi *RiotApi) trimSpectatorCache(puuid Puuid) {
 
 	gameIds := riotapi.GetGameIds(puuid)
-	for gameId := range gameIds {
-		delete(riotapi.spectatorCache, gameId)
-	}
-	if len(gameIds) > 0 {
-		log.Info().Msg(fmt.Sprintf("Spectator cache trimmed to %d elements", len(riotapi.spectatorCache)))
-	}
-}
-
-// Get all the game ids where the provided player is participating
-func (riotapi *RiotApi) GetGameIds(puuid Puuid) map[GameId]struct{} {
-
-	gameIds := make(map[GameId]struct{})
-	for gameId, spectator := range riotapi.spectatorCache {
-		for _, team := range spectator.Teams {
-			for _, participant := range team {
-				if participant.Puuid == puuid {
-					gameIds[gameId] = struct{}{}
-				}
-			}
-		}
-	}
-
+	cacheSize := riotapi.deleteSpectatorGames(gameIds)
 	if len(gameIds) > 1 {
 		log.Error().Msg(fmt.Sprintf("Found %d game ids for puuid %s in the cache", len(gameIds), puuid))
 	}
-
-	return gameIds
+	if len(gameIds) > 0 {
+		log.Info().Msg(fmt.Sprintf("Spectator cache trimmed to %d elements", cacheSize))
+	}
 }
 
 func (riotapi *RiotApi) request(url string) []byte {
+	data, err := riotapi.requestData(url)
+	if err != nil {
+		return nil
+	}
+	return data
+}
 
+func (riotapi *RiotApi) requestData(url string) ([]byte, error) {
 	vital := !strings.Contains(url, fmt.Sprintf(ROUTE_SPECTATOR, ""))
 	log.Debug().Msg(fmt.Sprintf("Requesting to url %s", url))
-	return riotapi.proxy.Request(url, vital)
+	return riotapi.requestDataFn(url, vital)
 }
 
 func (riotapi *RiotApi) Housekeeping(puuidsToKeep map[Puuid]struct{}) {
@@ -279,13 +278,11 @@ func (riotapi *RiotApi) Housekeeping(puuidsToKeep map[Puuid]struct{}) {
 		return
 	}
 
-	log.Info().Msg(fmt.Sprintf("Current number of riot ids: %d", len(riotapi.riotIds)))
+	log.Info().Msg(fmt.Sprintf("Current number of riot ids: %d", riotapi.riotIdsCount()))
 	log.Info().Msg(fmt.Sprintf("Keeping %d puuids", len(puuidsToKeep)))
 
-	// Purge my memory first
-	// - remove all the riot ids
-	// - add the riot ids that we need to keep, with the latest values provided by riot
-	riotapi.riotIds = make(map[Puuid]RiotId, len(puuidsToKeep))
+	// Build the final account map aside and replace it atomically when all lookups are done.
+	riotIdsToKeep := make(map[Puuid]RiotId, len(puuidsToKeep))
 	for puuid := range puuidsToKeep {
 
 		// Get a new riot id and add to the map
@@ -295,11 +292,10 @@ func (riotapi *RiotApi) Housekeeping(puuidsToKeep map[Puuid]struct{}) {
 			continue
 		}
 
-		riotapi.riotIds[puuid] = riotid
+		riotIdsToKeep[puuid] = riotid
 	}
 
-	// Send the final values to the database
-	riotapi.database.SetRiotIds(riotapi.riotIds)
+	riotapi.replaceRiotIds(riotIdsToKeep)
 }
 
 // Fetches the latest version of the data dragon available, and checks the version
@@ -361,11 +357,11 @@ func (riotapi *RiotApi) checkPatchVersion() error {
 
 	// If the new version is different from the one currently in use,
 	// invalidate my data to redownload when needed
-	if riotapi.version != realmVersion {
-		log.Info().Msg(fmt.Sprintf("Internal version (%s) is not in line with new version (%s)", riotapi.version, realmVersion))
-		riotapi.version = realmVersion
-		riotapi.database.SetVersion(realmVersion)
-		riotapi.champions = make(map[ChampionId]string)
+	currentVersion := riotapi.currentVersion()
+
+	if currentVersion != realmVersion {
+		log.Info().Msg(fmt.Sprintf("Internal version (%s) is not in line with new version (%s)", currentVersion, realmVersion))
+		riotapi.updateVersion(realmVersion)
 	} else {
 		log.Info().Msg("Internal version is in line with the new version. Nothing to do")
 	}

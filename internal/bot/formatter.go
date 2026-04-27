@@ -1,7 +1,9 @@
 package bot
 
 import (
+	"chanclol/internal/common"
 	"chanclol/internal/riotapi"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -30,6 +32,10 @@ func Welcome(channelName string) []Response {
 func InputNotValid(errorMessage string) []Response {
 
 	return []Response{ResponseString{fmt.Sprintf("Input not valid: \n> %s", errorMessage)}}
+}
+
+func CommandProcessingError() []Response {
+	return []Response{ResponseString{"Something went wrong while processing this command. Please try again in a bit"}}
 }
 
 func HelpMessage() []Response {
@@ -68,8 +74,19 @@ func HelpMessage() []Response {
 	return []Response{ResponseEmbed{embed}}
 }
 
-func NoResponseRiotApi(riotid riotapi.RiotId) []Response {
-	return []Response{ResponseString{fmt.Sprintf("Got no response from Riot API for player `%s`", &riotid)}}
+func RiotAccountError(riotid riotapi.RiotId, err error) []Response {
+	if errors.Is(err, common.ErrNotFound) {
+		return []Response{ResponseString{fmt.Sprintf("Player `%s` does not exist", &riotid)}}
+	}
+	return RiotApiTemporarilyUnavailable(riotid)
+}
+
+func RiotApiTemporarilyUnavailable(riotid riotapi.RiotId) []Response {
+	return []Response{ResponseString{fmt.Sprintf("I could not check player `%s` right now. Please try again in a bit", &riotid)}}
+}
+
+func StatusTemporarilyUnavailable() []Response {
+	return []Response{ResponseString{"I could not read the current status right now. Please try again in a bit"}}
 }
 
 func PlayerAlreadyRegistered(riotid riotapi.RiotId) []Response {
@@ -111,6 +128,10 @@ func LeagueMessageValue(league riotapi.League) string {
 func ChannelDoesNotExist(channelName string) []Response {
 
 	return []Response{ResponseString{fmt.Sprintf("Channel `%s` does not exist in this server", channelName)}}
+}
+
+func ChannelDisappeared(newChannelName string) []Response {
+	return []Response{ResponseString{fmt.Sprintf("The previous configured channel no longer exists. Using channel `%s` from now on", newChannelName)}}
 }
 
 func ChannelChanged(channelName string) []Response {
