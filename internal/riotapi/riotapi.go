@@ -203,8 +203,10 @@ func (riotapi *RiotApi) GetSpectator(puuid Puuid) (Spectator, error) {
 		return Spectator{}, err
 	}
 
-	// Add game to the cache
-	riotapi.cacheSpectator(gameId, spectator)
+	// Add game to the cache, replacing stale games for this player.
+	if removed := riotapi.replaceSpectatorForPlayer(puuid, gameId, spectator); removed > 0 {
+		log.Info().Msg(fmt.Sprintf("Removed %d stale spectator cache entries for puuid %s", removed, puuid))
+	}
 
 	return spectator, nil
 }

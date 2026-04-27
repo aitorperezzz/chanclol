@@ -78,11 +78,21 @@ func (riotapi *RiotApi) cachedSpectator(gameId GameId) (Spectator, bool) {
 	return spectator, ok
 }
 
-func (riotapi *RiotApi) cacheSpectator(gameId GameId, spectator Spectator) {
+func (riotapi *RiotApi) replaceSpectatorForPlayer(puuid Puuid, gameId GameId, spectator Spectator) int {
 	riotapi.mu.Lock()
 	defer riotapi.mu.Unlock()
 
+	removed := 0
+	for cachedGameId, cachedSpectator := range riotapi.spectatorCache {
+		if cachedGameId == gameId || !spectatorContainsPuuid(cachedSpectator, puuid) {
+			continue
+		}
+		delete(riotapi.spectatorCache, cachedGameId)
+		removed++
+	}
+
 	riotapi.spectatorCache[gameId] = spectator
+	return removed
 }
 
 func (riotapi *RiotApi) deleteSpectatorGames(gameIds map[GameId]struct{}) int {
@@ -114,6 +124,17 @@ func (riotapi *RiotApi) GetGameIds(puuid Puuid) map[GameId]struct{} {
 	}
 
 	return gameIds
+}
+
+func spectatorContainsPuuid(spectator Spectator, puuid Puuid) bool {
+	for _, team := range spectator.Teams {
+		for _, participant := range team {
+			if participant.Puuid == puuid {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (riotapi *RiotApi) currentVersion() string {
