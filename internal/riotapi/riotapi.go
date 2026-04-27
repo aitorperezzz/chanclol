@@ -36,6 +36,7 @@ type RiotApi struct {
 	riotIds        map[Puuid]RiotId
 	version        string
 	proxy          common.Proxy
+	requestDataFn  func(url string, vital bool) ([]byte, error)
 	spectatorCache map[GameId]Spectator
 }
 
@@ -49,6 +50,7 @@ func NewRiotApi(dbFilename string, apiKey string, restrictions []common.Restrict
 	riotapi.riotIds = riotapi.database.GetRiotIds()
 	riotapi.version = riotapi.database.GetVersion()
 	riotapi.proxy = common.NewProxy(map[string]string{"X-Riot-Token": apiKey}, restrictions)
+	riotapi.requestDataFn = riotapi.proxy.RequestData
 	riotapi.spectatorCache = map[GameId]Spectator{}
 
 	return riotapi
@@ -264,7 +266,7 @@ func (riotapi *RiotApi) request(url string) []byte {
 func (riotapi *RiotApi) requestData(url string) ([]byte, error) {
 	vital := !strings.Contains(url, fmt.Sprintf(ROUTE_SPECTATOR, ""))
 	log.Debug().Msg(fmt.Sprintf("Requesting to url %s", url))
-	return riotapi.proxy.RequestData(url, vital)
+	return riotapi.requestDataFn(url, vital)
 }
 
 func (riotapi *RiotApi) Housekeeping(puuidsToKeep map[Puuid]struct{}) {

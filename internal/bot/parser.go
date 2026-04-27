@@ -39,7 +39,8 @@ type ParseResult struct {
 	command      int
 	parseid      int
 	errorMessage string
-	arguments    interface{}
+	riotid       riotapi.RiotId
+	channelName  string
 }
 
 func Parse(message string) ParseResult {
@@ -97,7 +98,7 @@ func Parse(message string) ParseResult {
 		if len(words) == 0 {
 			return noInput(command, commandString)
 		} else {
-			return ParseResult{command: command, parseid: PARSEID_OK, arguments: strings.Join(words, " ")}
+			return ParseResult{command: command, parseid: PARSEID_OK, channelName: strings.Join(words, " ")}
 		}
 	case "status":
 		// chanclol status
@@ -127,5 +128,5 @@ func parseRiotId(command int, words []string) ParseResult {
 	parseid := PARSEID_OK
 	gameName := word[:hashtagPos]
 	tagLine := word[hashtagPos+1:]
-	return ParseResult{parseid: parseid, command: command, arguments: riotapi.RiotId{GameName: gameName, TagLine: tagLine}}
+	return ParseResult{parseid: parseid, command: command, riotid: riotapi.RiotId{GameName: gameName, TagLine: tagLine}}
 }

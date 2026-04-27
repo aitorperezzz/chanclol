@@ -213,39 +213,20 @@ func (bot *Bot) Receive(discord *discordgo.Session, message *discordgo.MessageCr
 		// Decide according to the command
 		switch parseResult.command {
 		case COMMAND_REGISTER:
-			switch riotid := parseResult.arguments.(type) {
-			default:
-				panic(fmt.Sprintf("unexpected type of riot id %T", riotid))
-			case riotapi.RiotId:
-				responses = append(responses, bot.register(riotid, message.GuildID)...)
-			}
+			responses = append(responses, bot.register(parseResult.riotid, message.GuildID)...)
 		case COMMAND_UNREGISTER:
-			switch riotid := parseResult.arguments.(type) {
-			default:
-				panic(fmt.Sprintf("unexpected type of riot id %T", riotid))
-			case riotapi.RiotId:
-				responses = append(responses, bot.unregister(riotid, message.GuildID)...)
-			}
+			responses = append(responses, bot.unregister(parseResult.riotid, message.GuildID)...)
 		case COMMAND_RANK:
-			switch riotid := parseResult.arguments.(type) {
-			default:
-				panic(fmt.Sprintf("unexpected type of riot id %T", riotid))
-			case riotapi.RiotId:
-				responses = append(responses, bot.rank(riotid)...)
-			}
+			responses = append(responses, bot.rank(parseResult.riotid)...)
 		case COMMAND_CHANNEL:
-			switch channelName := parseResult.arguments.(type) {
-			default:
-				panic(fmt.Sprintf("unexpected type of channel name %T", channelName))
-			case string:
-				responses = append(responses, bot.channel(discord, channelName, message.GuildID)...)
-			}
+			responses = append(responses, bot.channel(discord, parseResult.channelName, message.GuildID)...)
 		case COMMAND_STATUS:
 			responses = append(responses, bot.status(discord, message.GuildID, configuredChannelName)...)
 		case COMMAND_HELP:
 			responses = append(responses, HelpMessage()...)
 		default:
-			panic(fmt.Sprintf("Command %d is not one of the possible ones", parseResult.command))
+			log.Error().Msg(fmt.Sprintf("Command %d is not one of the possible ones", parseResult.command))
+			responses = append(responses, CommandProcessingError()...)
 		}
 		bot.sendResponsesToChannel(responses, message.ChannelID)
 	default:
@@ -292,12 +273,10 @@ func (bot *Bot) register(riotid riotapi.RiotId, guildid string) []Response {
 	}
 
 	// Get rank of this player
-	leagues, err := bot.riotapi.GetLeagues(puuid)
-	if errors.Is(err, common.ErrNotFound) {
-		leagues = []riotapi.League{}
-	} else if err != nil {
+	leagues, err := bot.getLeaguesOrEmpty(puuid)
+	if err != nil {
 		log.Info().Err(err)
-		return RiotApiError(riotid, err)
+		return RiotApiTemporarilyUnavailable(riotid)
 	}
 
 	// Now it's safe to register the player
@@ -355,12 +334,10 @@ func (bot *Bot) rank(riotid riotapi.RiotId) []Response {
 	}
 
 	// Get the rank of this player
-	leagues, err := bot.riotapi.GetLeagues(puuid)
-	if errors.Is(err, common.ErrNotFound) {
-		leagues = []riotapi.League{}
-	} else if err != nil {
+	leagues, err := bot.getLeaguesOrEmpty(puuid)
+	if err != nil {
 		log.Info().Err(err)
-		return RiotApiError(riotid, err)
+		return RiotApiTemporarilyUnavailable(riotid)
 	}
 
 	// Send the final message
@@ -390,7 +367,8 @@ func (bot *Bot) status(discord *discordgo.Session, guildid string, configuredCha
 	for _, puuid := range bot.guildPuuids(guildid) {
 		riotid, err := bot.riotapi.GetRiotId(puuid)
 		if err != nil {
-			panic(err)
+			log.Warn().Err(err).Msg(fmt.Sprintf("Could not resolve riot id for puuid %s while building status", puuid))
+			return StatusTemporarilyUnavailable()
 		}
 		riotIds = append(riotIds, riotid)
 	}
@@ -464,7 +442,8 @@ func (bot *Bot) selectPlayerToCheck() (riotapi.Puuid, bool) {
 	for _, player := range bot.playerCheckStates() {
 		riotid, err := bot.riotapi.GetRiotId(player.puuid)
 		if err != nil {
-			panic(err)
+			log.Warn().Err(err).Msg(fmt.Sprintf("Could not resolve riot id for puuid %s while selecting player to check", player.puuid))
+			continue
 		}
 		// Time the stopwatch has been stopped for this player
 		if player.stopped {
@@ -492,6 +471,14 @@ func (bot *Bot) selectPlayerToCheck() (riotapi.Puuid, bool) {
 		log.Debug().Msg(fmt.Sprintf("Checking player with puuid %s in this iteration", puuid))
 		return puuid, true
 	}
+}
+
+func (bot *Bot) getLeaguesOrEmpty(puuid riotapi.Puuid) ([]riotapi.League, error) {
+	leagues, err := bot.riotapi.GetLeagues(puuid)
+	if errors.Is(err, common.ErrNotFound) {
+		return []riotapi.League{}, nil
+	}
+	return leagues, err
 }
 
 // Get channel name, provided a channel id, from the discord api

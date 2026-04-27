@@ -34,6 +34,10 @@ func InputNotValid(errorMessage string) []Response {
 	return []Response{ResponseString{fmt.Sprintf("Input not valid: \n> %s", errorMessage)}}
 }
 
+func CommandProcessingError() []Response {
+	return []Response{ResponseString{"Something went wrong while processing this command. Please try again in a bit"}}
+}
+
 func HelpMessage() []Response {
 
 	embed := discordgo.MessageEmbed{Title: "Commands available", Color: color}
@@ -74,11 +78,15 @@ func RiotAccountError(riotid riotapi.RiotId, err error) []Response {
 	if errors.Is(err, common.ErrNotFound) {
 		return []Response{ResponseString{fmt.Sprintf("Player `%s` does not exist", &riotid)}}
 	}
-	return RiotApiError(riotid, err)
+	return RiotApiTemporarilyUnavailable(riotid)
 }
 
-func RiotApiError(riotid riotapi.RiotId, err error) []Response {
+func RiotApiTemporarilyUnavailable(riotid riotapi.RiotId) []Response {
 	return []Response{ResponseString{fmt.Sprintf("I could not check player `%s` right now. Please try again in a bit", &riotid)}}
+}
+
+func StatusTemporarilyUnavailable() []Response {
+	return []Response{ResponseString{"I could not read the current status right now. Please try again in a bit"}}
 }
 
 func PlayerAlreadyRegistered(riotid riotapi.RiotId) []Response {

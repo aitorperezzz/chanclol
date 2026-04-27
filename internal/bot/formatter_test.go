@@ -19,9 +19,9 @@ func TestRiotAccountErrorFormatsNotFound(t *testing.T) {
 	}
 }
 
-func TestRiotApiErrorFormatsTemporaryError(t *testing.T) {
+func TestRiotApiTemporarilyUnavailable(t *testing.T) {
 	riotid := riotapi.RiotId{GameName: "Player", TagLine: "EUW"}
-	responses := RiotApiError(riotid, common.ErrRateLimited)
+	responses := RiotApiTemporarilyUnavailable(riotid)
 
 	response, ok := responses[0].(ResponseString)
 	if !ok {
