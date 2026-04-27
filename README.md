@@ -12,6 +12,8 @@ After the bot has been invited to your server, it will:
 - Change the channel on which the bot sends its live messages
 - Print the status of the server: the players that are registered, and the channel being used to send live messages
 
+If a provided Riot ID does not exist, the bot will say so. If Riot is temporarily unavailable or rate limited, the bot will ask you to try again later. Players without ranked entries are handled normally and shown as not ranked.
+
 ## How to run it
 
 First prepare a `.env` file defining the following environment variables:
@@ -40,6 +42,7 @@ You can also run the application locally with Go installed:
 
 ```sh
 go test ./...
+go vet ./...
 go run .
 ```
 
@@ -49,7 +52,7 @@ By default, local runs read `config.json` and store the bot database files in `.
 
 The Docker image is built with a Go builder stage, runs the test suite during the build, and copies only the compiled static binary plus `config.json` into the final image.
 
-The GitLab pipeline uses Buildah and pushes two tags to the GitLab container registry when `main` is built:
+The GitLab pipeline runs `go test ./...`, runs `go vet ./...`, and then uses Buildah to push two tags to the GitLab container registry when `main` is built:
 
 - `$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA`
 - `$CI_REGISTRY_IMAGE:latest`
