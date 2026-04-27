@@ -30,12 +30,13 @@ const ROUTE_SPECTATOR = "/lol/spectator/v5/active-games/by-summoner/%s"
 const ROUTE_CHAMPIONS = "http://ddragon.leagueoflegends.com/cdn/%s/data/en_US/champion.json"
 
 type RiotApi struct {
-	database       DatabaseRiotApi
-	mu             *sync.RWMutex
-	champions      map[ChampionId]string
-	riotIds        map[Puuid]RiotId
-	version        string
-	proxy          common.Proxy
+	database  DatabaseRiotApi
+	mu        *sync.RWMutex
+	champions map[ChampionId]string
+	riotIds   map[Puuid]RiotId
+	version   string
+	proxy     common.Proxy
+	// requestDataFn defaults to proxy.RequestData and is replaceable in tests.
 	requestDataFn  func(url string, vital bool) ([]byte, error)
 	spectatorCache map[GameId]Spectator
 }
@@ -80,7 +81,7 @@ func (riotapi *RiotApi) GetRiotId(puuid Puuid) (RiotId, error) {
 	}
 	log.Debug().Msg(fmt.Sprintf("Found riot id %s for puuid %s", riotid, puuid))
 
-	// Update cache
+	// Store the account mapping in memory and on disk.
 	riotapi.cacheRiotId(puuid, riotid)
 	return riotid, nil
 }
@@ -107,8 +108,8 @@ func (riotapi *RiotApi) GetPuuid(riotid RiotId) (Puuid, error) {
 		return "", err
 	}
 
-	// Update cache
-	// Take care here because maybe I have an old riot id that I need to update
+	// Store the account mapping in memory and on disk.
+	// Take care here because maybe I have an old riot id that I need to update.
 	if existed := riotapi.cacheRiotId(puuid, riotid); existed {
 		log.Debug().Msg(fmt.Sprintf("Updating riot id %s for puuid %s", riotid, puuid))
 	} else {
@@ -228,7 +229,7 @@ func (riotapi *RiotApi) getChampionData() error {
 		return fmt.Errorf("champion data in response is not correctly formatted")
 	}
 
-	// Update cache
+	// Store champion data in memory and on disk.
 	champions := make(map[ChampionId]string, len(raw.Data))
 	for _, champion := range raw.Data {
 		if championId, err := strconv.Atoi(champion.Key); err != nil {
@@ -280,7 +281,7 @@ func (riotapi *RiotApi) Housekeeping(puuidsToKeep map[Puuid]struct{}) {
 	log.Info().Msg(fmt.Sprintf("Current number of riot ids: %d", riotapi.riotIdsCount()))
 	log.Info().Msg(fmt.Sprintf("Keeping %d puuids", len(puuidsToKeep)))
 
-	// Build the final cache aside and replace it atomically when all lookups are done.
+	// Build the final account map aside and replace it atomically when all lookups are done.
 	riotIdsToKeep := make(map[Puuid]RiotId, len(puuidsToKeep))
 	for puuid := range puuidsToKeep {
 

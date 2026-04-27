@@ -262,7 +262,7 @@ func (bot *Bot) register(riotid riotapi.RiotId, guildid string) []Response {
 	// Get the puuid
 	puuid, err := bot.riotapi.GetPuuid(riotid)
 	if err != nil {
-		log.Info().Err(err)
+		logRiotAPIError("resolve account", riotid, err)
 		return RiotAccountError(riotid, err)
 	}
 
@@ -275,7 +275,7 @@ func (bot *Bot) register(riotid riotapi.RiotId, guildid string) []Response {
 	// Get rank of this player
 	leagues, err := bot.getLeaguesOrEmpty(puuid)
 	if err != nil {
-		log.Info().Err(err)
+		logRiotAPIError("get leagues", riotid, err)
 		return RiotApiTemporarilyUnavailable(riotid)
 	}
 
@@ -299,7 +299,7 @@ func (bot *Bot) unregister(riotid riotapi.RiotId, guildid string) []Response {
 	// Get the puuid
 	puuid, err := bot.riotapi.GetPuuid(riotid)
 	if err != nil {
-		log.Info().Err(err)
+		logRiotAPIError("resolve account", riotid, err)
 		return RiotAccountError(riotid, err)
 	}
 
@@ -329,14 +329,14 @@ func (bot *Bot) rank(riotid riotapi.RiotId) []Response {
 	// Get the puuid
 	puuid, err := bot.riotapi.GetPuuid(riotid)
 	if err != nil {
-		log.Info().Err(err)
+		logRiotAPIError("resolve account", riotid, err)
 		return RiotAccountError(riotid, err)
 	}
 
 	// Get the rank of this player
 	leagues, err := bot.getLeaguesOrEmpty(puuid)
 	if err != nil {
-		log.Info().Err(err)
+		logRiotAPIError("get leagues", riotid, err)
 		return RiotApiTemporarilyUnavailable(riotid)
 	}
 
@@ -378,15 +378,7 @@ func (bot *Bot) status(discord *discordgo.Session, guildid string, configuredCha
 func (bot *Bot) loop() {
 
 	for {
-		// TODO: investigate if this wait time needs to be updated according to
-		// the number of users registered
-		var wg sync.WaitGroup
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			time.Sleep(bot.mainCycle)
-		}()
-		wg.Wait()
+		time.Sleep(bot.mainCycle)
 		// Housekeeping of the Riot API if necessary
 		bot.riotapiHousekeepingExecutor.Execute()
 		// Find a player to check during this iteration
@@ -414,7 +406,7 @@ func (bot *Bot) loop() {
 					log.Info().Msg(fmt.Sprintf("Player %s is now offline", riotid))
 				}
 			} else {
-				log.Warn().Err(err).Msg(fmt.Sprintf("Could not check spectator data for player %s", riotid))
+				logRiotAPIError("check spectator data", riotid, err)
 			}
 			continue
 		}
@@ -431,6 +423,19 @@ func (bot *Bot) loop() {
 			// Update last informed game id
 			bot.setLastInformedGameId(puuid, target.guildid, spectator.GameId)
 		}
+	}
+}
+
+func logRiotAPIError(action string, riotid riotapi.RiotId, err error) {
+	switch {
+	case errors.Is(err, common.ErrRateLimited):
+		log.Warn().Err(err).Msg(fmt.Sprintf("Could not %s for player %s because Riot API rate limited the request", action, riotid))
+	case errors.Is(err, common.ErrRequestRejected):
+		log.Warn().Err(err).Msg(fmt.Sprintf("Could not %s for player %s because the local rate limiter rejected the request", action, riotid))
+	case errors.Is(err, common.ErrRequestFailed):
+		log.Warn().Err(err).Msg(fmt.Sprintf("Could not %s for player %s because the Riot API request failed", action, riotid))
+	default:
+		log.Warn().Err(err).Msg(fmt.Sprintf("Could not %s for player %s", action, riotid))
 	}
 }
 
