@@ -69,7 +69,7 @@ func (rl *RateLimiter) Allowed(vital bool, allowed chan bool) {
 				// Remove the uuid in case it is there
 				if _, ok := rl.pendingVitalRequests[thisuuid]; ok {
 					delete(rl.pendingVitalRequests, thisuuid)
-					log.Warn().Msg(fmt.Sprint("Serving delayed vital request ", thisuuid))
+					log.Debug().Msg(fmt.Sprint("Serving delayed vital request ", thisuuid))
 					logNumDelayedVitalRequests()
 				}
 				// Include this request in the history as it is allowed
@@ -99,7 +99,7 @@ func (rl *RateLimiter) Allowed(vital bool, allowed chan bool) {
 				rl.pendingVitalRequests[thisuuid] = struct{}{}
 			}
 			// and sleep for some time
-			log.Warn().Msg(fmt.Sprint("Vital request ", thisuuid, " delayed ", analysis.wait))
+			log.Debug().Msg(fmt.Sprint("Vital request ", thisuuid, " delayed ", analysis.wait))
 			logNumDelayedVitalRequests()
 			rl.mu.Unlock()
 			time.Sleep(analysis.wait)
